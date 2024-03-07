@@ -139,6 +139,7 @@ import probit from  './src/probit.js'
 import timex from  './src/timex.js'
 import tokocrypto from  './src/tokocrypto.js'
 import upbit from  './src/upbit.js'
+import valr from  './src/valr.js'
 import wavesexchange from  './src/wavesexchange.js'
 import wazirx from  './src/wazirx.js'
 import whitebit from  './src/whitebit.js'
@@ -305,6 +306,7 @@ const exchanges = {
     'timex':                  timex,
     'tokocrypto':             tokocrypto,
     'upbit':                  upbit,
+    'valr':                   valr,
     'wavesexchange':          wavesexchange,
     'wazirx':                 wazirx,
     'whitebit':               whitebit,
@@ -549,6 +551,7 @@ export {
     timex,
     tokocrypto,
     upbit,
+    valr,
     wavesexchange,
     wazirx,
     whitebit,

@@ -1,6 +1,6 @@
 //  ---------------------------------------------------------------------------
 import Exchange from './abstract/valr.js';
-import { Market, Balances, Precise } from '../ccxt.js';
+import { Market, Balances, Precise, Tickers, Ticker } from '../ccxt.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
 
 // import { ExchangeError,  AuthenticationError, RequestTimeout} from './base/errors.js';
@@ -27,6 +27,9 @@ export default class valr extends Exchange {
                 'future': undefined,
                 'option': undefined,
                 'fetchCurrencies': true,
+                'fetchTicker': true,
+                'fetchTickers': true,
+                'fetchBalance': true,
             },
             'urls': {
                 'logo': undefined,
@@ -233,6 +236,73 @@ export default class valr extends Exchange {
             },
             'info': market,
         });
+    }
+
+    async fetchTickers (symbols: string[] = undefined, params = {}): Promise<Tickers> {
+        await this.loadMarkets ();
+        const response = await this.publicGetMarketsummary (params);
+        // [
+        //     {
+        //       "currencyPair": "BTCZAR",
+        //       "askPrice": "520000",
+        //       "bidPrice": "400000",
+        //       "lastTradedPrice": "400000",
+        //       "previousClosePrice": "400000",
+        //       "baseVolume": "0",
+        //       "highPrice": "400000",
+        //       "lowPrice": "0",
+        //       "created": "2022-06-12T18:06:05.001Z",
+        //       "changeFromPrevious": "0",
+        //       "markPrice": "400000"
+        //     },
+        //     {
+        //       "currencyPair": "ETHZAR",
+        //       "askPrice": "32158",
+        //       "bidPrice": "30899",
+        //       "lastTradedPrice": "30899",
+        //       "previousClosePrice": "30899",
+        //       "baseVolume": "0",
+        //       "highPrice": "30899",
+        //       "lowPrice": "0",
+        //       "created": "2022-06-12T18:06:05.001Z",
+        //       "changeFromPrevious": "0",
+        //       "markPrice": "30899"
+        //     },
+        //     ...
+        // ]
+        return this.parseTickers (response, symbols, params);
+    }
+
+    async fetchTicker (symbol: string, params = {}): Promise<Ticker> {
+        await this.loadMarkets ();
+        const market = this.marketId (symbol);
+        const request = {
+            'pair': market,
+        };
+        const response = await this.publicGetPairMarketsummary (this.extend (request, params));
+        return this.parseTicker (response);
+    }
+
+    parseTicker (ticker: object, market: Market = undefined): Ticker {
+        const timestamp = this.parse8601 (this.safeString (ticker, 'created'));
+        const result = {
+            'symbol': this.safeSymbol (this.safeString (ticker, 'currencyPair')),
+            'info': ticker,
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'high': this.safeString (ticker, 'highPrice'),
+            'low': this.safeString (ticker, 'lowPrice'),
+            'bid': this.safeString (ticker, 'bidPrice'),
+            'ask': this.safeString (ticker, 'askPrice'),
+            'close': this.safeString (ticker, ''),
+            'last': this.safeString (ticker, 'lastTradedPrice'),
+            'previousClose': this.safeString (ticker, 'previousClosePrice'),
+            'average': this.safeString (ticker, 'markPrice'),
+            'change': this.safeString (ticker, 'changeFromPrevious'),
+            'baseVolume': this.safeString (ticker, 'baseVolume'),
+            'quoteVolume': this.safeString (ticker, 'quoteVolume'),
+        };
+        return this.safeTicker (result);
     }
 
     async fetchBalance (params = {}): Promise<Balances> {

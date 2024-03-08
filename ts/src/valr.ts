@@ -1,5 +1,6 @@
 //  ---------------------------------------------------------------------------
 import Exchange from './abstract/valr.js';
+import { Market, Balances, Precise } from '../ccxt.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
 
 // import { ExchangeError,  AuthenticationError, RequestTimeout} from './base/errors.js';
@@ -19,6 +20,12 @@ export default class valr extends Exchange {
             'version': '1',
             // 'comment': 'This comment is optional',
             'has': {
+                'CORS': undefined,
+                'spot': true,
+                'margin': undefined,
+                'swap': undefined,
+                'future': undefined,
+                'option': undefined,
                 'fetchCurrencies': true,
             },
             'urls': {
@@ -128,75 +135,162 @@ export default class valr extends Exchange {
         for (let i = 0; i < currencies.length; i++) {
             const currency = currencies[i];
             const code = this.safeCurrencyCode (this.safeString (currency, 'symbol'));
-            result[code] = {
+            result[code] = this.safeCurrencyStructure ({
                 'id': this.safeString (currency, 'symbol'),
                 'code': code,
                 'info': currency,
                 'name': this.safeString (currency, 'longName'),
                 'active': this.safeString (currency, 'isActive'),
-                'deposit': undefined,
-                'withdraw': undefined,
-                'fee': undefined,
                 'precision': this.safeString (currency, 'decimalPlaces'),
-                'limits': {
-                    'amount': {
-                        'min': undefined,
-                        'max': undefined,
-                    },
-                    'withdraw': {
-                        'min': undefined,
-                        'max': undefined,
-                    },
-                },
-                'networks': {},
-            };
+            });
         }
         return result;
     }
 
     async fetchMarkets (params = {}) {
-        /**
-         * @method
-         * @name valr#fetchMarkets
-         * @see https://docs.valr.com/#cd1f0448-3da3-44cf-b00d-91edd74e7e19
-         * @description retrieves data on all markets for valr
-         * @param {object} [params] extra parameters specific to the exchange API endpoint
-         * @returns {object[]} an array of objects representing market data
-         */
-        const markets = await this.publicGetMarketsummary (params);
+        const markets = await this.publicGetPairs (params);
+        // [
+        //     {'symbol': 'ENJUSDC',
+        //     'baseCurrency': 'ENJ',
+        //     'quoteCurrency': 'USDC',
+        //     'shortName': 'ENJ/USDC',
+        //     'active': True,
+        //     'minBaseAmount': '3.5',
+        //     'maxBaseAmount': '3586.3',
+        //     'minQuoteAmount': '2',
+        //     'maxQuoteAmount': '5000',
+        //     'tickSize': '0.01',
+        //     'baseDecimalPlaces': '2',
+        //     'marginTradingAllowed': False,
+        //     'currencyPairType': 'SPOT'},
+        //    {'symbol': 'USDTZARPERP',
+        //     'baseCurrency': 'USDT',
+        //     'quoteCurrency': 'ZAR',
+        //     'shortName': 'USDT/ZARPERP',
+        //     'active': True,
+        //     'minBaseAmount': '1',
+        //     'maxBaseAmount': '250000',
+        //     'minQuoteAmount': '15',
+        //     'maxQuoteAmount': '5000000',
+        //     'tickSize': '0.01',
+        //     'baseDecimalPlaces': '3',
+        //     'marginTradingAllowed': False,
+        //     'currencyPairType': 'FUTURE'
+        // },
+        // ]
         return this.parseMarkets (markets);
     }
 
-    // parseMarket(market: any): Market {
-    // [
-    //     {
-    //         "currencyPair": "BTCZAR",
-    //         "askPrice": "520000",
-    //         "bidPrice": "400000",
-    //         "lastTradedPrice": "400000",
-    //         "previousClosePrice": "400000",
-    //         "baseVolume": "0",
-    //         "highPrice": "400000",
-    //         "lowPrice": "0",
-    //         "created": "2022-06-12T18:06:05.001Z",
-    //         "changeFromPrevious": "0",
-    //         "markPrice": "400000"
-    //     },
-    //     {
-    //         "currencyPair": "ETHZAR",
-    //         "askPrice": "32158",
-    //         "bidPrice": "30899",
-    //         "lastTradedPrice": "30899",
-    //         "previousClosePrice": "30899",
-    //         "baseVolume": "0",
-    //         "highPrice": "30899",
-    //         "lowPrice": "0",
-    //         "created": "2022-06-12T18:06:05.001Z",
-    //         "changeFromPrevious": "0",
-    //         "markPrice": "30899"
-    //     }
-    // ]
-    // }
+    parseMarket (market): Market {
+        const base = this.safeCurrencyCode (this.safeString (market, 'baseCurrency'));
+        const quote = this.safeCurrencyCode (this.safeString (market, 'quoteCurrency'));
+        const currencyPairType = this.safeString (market, 'currencyPairType');
+        let marketType = undefined;
+        let spot = undefined;
+        let swap = undefined;
+        let symbol = base + '/' + quote;
+        let contract = false;
+        if (currencyPairType === 'SPOT') {
+            marketType = 'spot';
+            spot = true;
+        } else if (currencyPairType === 'FUTURE') {
+            marketType = 'swap';
+            spot = false;
+            swap = true;
+            symbol = symbol + ':' + quote;
+            contract = true;
+        }
+        return this.safeMarketStructure ({
+            'id': this.safeString (market, 'symbol'),
+            'symbol': symbol,
+            'base': base,
+            'quote': quote,
+            'baseId': this.safeString (market, 'baseCurrency'),
+            'quoteId': this.safeString (market, 'quoteCurrency'),
+            'active': this.safeBool (market, 'active'),
+            'type': marketType,
+            'spot': spot,
+            'margin': this.safeBool (market, 'marginTradingAllowed'),
+            'future': false,
+            'swap': swap,
+            'option': false,
+            'contract': contract,
+            'percentage': true,
+            'tierBased': false,
+            'precision': {
+                'price': this.safeFloat (market, 'baseDecimalPlaces'),
+                'amount': this.safeFloat (market, 'tickSize'),
+            },
+            'limits': {
+                'amount': {
+                    'min': this.safeFloat (market, 'minBaseAmount'),
+                    'max': this.safeFloat (market, 'maxBaseAmount'),
+                },
+                'price': {
+                    'min': this.safeFloat (market, 'minQuoteAmount'),
+                    'max': this.safeFloat (market, 'maxQuoteAmount'),
+                },
+            },
+            'info': market,
+        });
+    }
+
+    async fetchBalance (params = {}): Promise<Balances> {
+        await this.loadMarkets ();
+        const response = await this.privateGetAccountBalances (params);
+        // [
+        //     {
+        //       "currency": "USDT",
+        //       "available": "44822.97549155",
+        //       "reserved": "99.99925",
+        //       "total": "145612.43129945",
+        //       "updatedAt": "2023-04-25T09:00:04.406Z",
+        //       "lendReserved": "100000",
+        //       "borrowReserved": "689.4565579",
+        //       "borrowedAmount": "0",
+        //       "totalInReference": "7828.62533868",
+        //       "totalInReferenceWeighted": "7828.62533868",
+        //       "referenceCurrency": "USDC"
+        //     },
+        //     {
+        //       "currency": "BTC",
+        //       "available": "0",
+        //       "reserved": "0",
+        //       "total": "-0.00101056",
+        //       "updatedAt": "2023-04-25T09:00:00.103Z",
+        //       "lendReserved": "0",
+        //       "borrowReserved": "0",
+        //       "borrowedAmount": "0.00101056",
+        //       "totalInReference": "-28.29568",
+        //       "totalInReferenceWeighted": "-27.588288",
+        //       "referenceCurrency": "USDC"
+        //     }
+        // ]
+        return this.parseBalance (response);
+    }
+
+    parseBalance (balances): Balances {
+        const result = {
+            'timestamp': undefined,
+            'datetime': undefined,
+            'info': balances,
+        };
+        for (let i = 0; i < balances.length; i++) {
+            const balance = balances[i];
+            const code = this.safeCurrencyCode (this.safeString (balance, 'currency'));
+            const debt = Precise.stringAdd (
+                this.safeString (balance, 'lendReserved'),
+                this.safeString (balance, 'borrowReserved')
+            );
+            result[code] = {
+                'free': this.safeFloat (balance, 'available'),
+                'used': this.safeFloat (balance, 'reserved'),
+                'total': this.safeFloat (balance, 'total'),
+                'debt': debt,
+            };
+        }
+        return this.safeBalance (result);
+    }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
         let url = this.urls['api'][api] + '/' + this.implodeParams (path, params);

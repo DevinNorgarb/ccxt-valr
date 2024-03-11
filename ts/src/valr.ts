@@ -1,6 +1,7 @@
 //  ---------------------------------------------------------------------------
 import Exchange from './abstract/valr.js';
-import { Market, Balances, Precise, Tickers, Ticker } from '../ccxt.js';
+import type { Market, Balances, Tickers, Ticker } from './base/types.js';
+import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
 
 // import { ExchangeError,  AuthenticationError, RequestTimeout} from './base/errors.js';
@@ -26,10 +27,30 @@ export default class valr extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
+                'cancelOrder': false,
+                'createOrder': false,
+                'fetchAccounts': false,
+                'fetchBalance': true,
                 'fetchCurrencies': true,
+                'fetchDepositAddress': false,
+                'fetchDeposits': false,
+                'fetchFundingLimits': false,
+                'fetchLedger': false,
+                'fetchMyTrades': false,
+                'fetchOHLCV': false,
+                'fetchOpenOrders': false,
+                'fetchOrder': false,
+                'fetchOrderBook': false,
+                'fetchOrders': false,
+                'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
-                'fetchBalance': true,
+                'fetchTrades': false,
+                'fetchTradingFees': false,
+                'fetchTransactions': false,
+                'fetchWithdrawals': false,
+                'transfer': false,
+                'withdraw': false,
             },
             'urls': {
                 'logo': undefined,
@@ -65,20 +86,130 @@ export default class valr extends Exchange {
                         '{pair}/futures/funding/history',
                         'time',
                         'status',
+                        'futures/info',
                     ],
                 },
                 'private': {
                     'get': [
                         'account/api-keys/current',
+                        'account/subaccounts',
                         'account/balances',
+                        'account/balances/all',
                         'account/transactionhistory',
                         'account/fees/trade',
                         'marketdata/{pair}/orderbook',
+                        'marketdata/{currency}/orderbook/full',
+                        'marketdata/{currency}/tradehistory',
                         'marketdata/{pair}/tradehistory',
+                        'wallet/crypto/{currency}/deposit/address',
+                        'wallet/crypto/{currency}/deposit/history',
+                        'wallet/crypto/address-book',
+                        'wallet/crypto/address-book/{currency}',
+                        'wallet/crypto/{currency}/withdraw',
+                        'wallet/crypto/{currency}/withdraw/{id}',
+                        'wallet/crypto/{currency}/withdraw/history',
+                        'wallet/fiat/{currency}/accounts/{id}',
+                        'wallet/fiat/{currency}/accounts',
+                        'wallet/fiat/{currency}/banks',
+                        'wallet/fiat/{currency}/deposit/reference',
+                        'wallet/fiat/{currency}/deposit/reference/{currency}',
+                        'wallet/fiat/{currency}/auto-buy',
+                        'wire/accounts',
+                        'simple/{pair}/order/{id}',
+                        'pay/limits',
+                        'pay/payid',
+                        'pay/history',
+                        'pay/identifier/{identifier}',
+                        'pay/transactionid/{id}',
+                        'orders/{pair}/orderid/{id}',
+                        'orders/{pair}/customerorderid/{id}',
+                        'orders/open',
+                        'orders/history',
+                        'orders/history/summary/orderid/{id}',
+                        'orders/history/summary/customerorderid/{id}',
+                        'orders/history/detail/orderid/{id}',
+                        'orders/history/detail/customerorderid/{id}',
+                        'staking/balances/{currency}',
+                        'staking/rates',
+                        'staking/rates/{currency}',
+                        'staking/rewards',
+                        'staking/history',
+                        'margin/status',
+                        'margin/account/status',
+                        'positions/open',
+                        'positions/closed/summary',
+                        'positions/closed',
+                        'positions/history',
+                        'positions/funding/history',
+                        'borrows/{currency}/history',
+                        'loans/rates',
+                    ],
+                    'post': [
+                        'account/subaccount',
+                        'account/subaccounts/transfer',
+                        'wallet/crypto/{currency}/withdraw',
+                        'wallet/fiat/{currency}/accounts',
+                        'wallet/fiat/{currency}/withdraw',
+                        'wire/withdrawals',
+                        'simple/{pair}/quote',
+                        'simple/{pair}/order',
+                        'pay',
+                        'orders/limit',
+                        'orders/market',
+                        'orders/stop/limit',
+                        'batch/orders',
+                        'staking/stake',
+                        'staking/un-stake',
+                    ],
+                    'put': [
+                        'pay/transactionid/{id}/reverse',
+                        'orders/modify',
+                        'margin/account/status',
+                    ],
+                    'delete': [
+                        'wallet/fiat/{currency}/accounts/{id}',
+                        'orders/order',
+                        'orders',
+                        'orders/{pair}',
+                    ],
+                },
+                'privateV2': {
+                    'get': [
+                        'margin/status',
+                        'healthz',
+                    ],
+                    'post': [
+                        'orders/market',
+                        'orders/limit',
+                        'orders/stop/limit',
+                    ],
+                    'put': [
+                        'orders/modify',
+                    ],
+                    'delete': [
+                        'orders/order',
                     ],
                 },
             },
         });
+    }
+
+    async fetchStatus (params = {}): Promise<any> {
+        const response = await this.publicGetStatus (params);
+        const statusReport = this.safeString (response, 'status');
+        let status = undefined;
+        if (statusReport === 'online') {
+            status = 'ok';
+        } else if (statusReport === 'read-only') {
+            status = 'maintenance';
+        }
+        return {
+            'status': status,
+            'updated': undefined,
+            'eta': undefined,
+            'url': 'https://status.valr.com/',
+            'info': response,
+        };
     }
 
     async fetchCurrencies (params = {}) {

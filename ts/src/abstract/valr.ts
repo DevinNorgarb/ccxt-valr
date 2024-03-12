@@ -22,7 +22,7 @@ interface Exchange {
     publicGetPairFuturesFundingHistory (params?: {}): Promise<implicitReturnType>;
     publicGetTime (params?: {}): Promise<implicitReturnType>;
     publicGetStatus (params?: {}): Promise<implicitReturnType>;
-    publicGetPublicFuturesInfo (params?: {}): Promise<implicitReturnType>;
+    publicGetFuturesInfo (params?: {}): Promise<implicitReturnType>;
     privateGetAccountApiKeysCurrent (params?: {}): Promise<implicitReturnType>;
     privateGetAccountSubaccounts (params?: {}): Promise<implicitReturnType>;
     privateGetAccountBalances (params?: {}): Promise<implicitReturnType>;

@@ -1,8 +1,23 @@
 //  ---------------------------------------------------------------------------
 import Exchange from './abstract/valr.js';
-import type { Market, Balances, Tickers, Ticker } from './base/types.js';
+import type {
+    Market,
+    Balances,
+    Tickers,
+    Ticker,
+    Order,
+    OrderType,
+    OrderSide,
+    OrderRequest,
+    Int,
+} from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
+import {
+    NotSupported,
+    ArgumentsRequired,
+    InvalidOrder,
+} from './base/errors.js';
 
 // import { ExchangeError,  AuthenticationError, RequestTimeout} from './base/errors.js';
 // import { Precise } from './base/Precise.js';
@@ -28,9 +43,12 @@ export default class valr extends Exchange {
                 'future': undefined,
                 'option': undefined,
                 'cancelOrder': false,
+                'createMarketBuyOrderWithCost': true,
+                'createMarketSellOrderWithCost': true,
                 'createOrder': false,
                 'fetchAccounts': false,
                 'fetchBalance': true,
+                'fetchClosedOrders': true,
                 'fetchCurrencies': true,
                 'fetchDepositAddress': false,
                 'fetchDeposits': false,
@@ -38,10 +56,10 @@ export default class valr extends Exchange {
                 'fetchLedger': false,
                 'fetchMyTrades': false,
                 'fetchOHLCV': false,
-                'fetchOpenOrders': false,
-                'fetchOrder': false,
+                'fetchOpenOrders': true,
+                'fetchOrder': true,
                 'fetchOrderBook': false,
-                'fetchOrders': false,
+                'fetchOrders': true,
                 'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
@@ -493,8 +511,183 @@ export default class valr extends Exchange {
         return this.safeBalance (result);
     }
 
+    async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
+        this.loadMarkets ();
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a symbol argument');
+        }
+        const market = this.marketId (symbol);
+        const request = {
+            'id': id,
+            'pair': market,
+        };
+        const response = await this.privateGetOrdersPairOrderidId (this.extend (request, params));
+        // {
+        //     "orderId": "00fa7cb4-ea7c-4b8e-beed-dc63e226a6a2",
+        //     "orderStatusType": "Placed",
+        //     "currencyPair": "BTCZAR",
+        //     "originalPrice": "100000",
+        //     "remainingQuantity": "0.02",
+        //     "originalQuantity": "0.02",
+        //     "orderSide": "buy",
+        //     "orderType": "post-only limit",
+        //     "failedReason": "",
+        //     "orderUpdatedAt": "2024-03-12T09:42:37.766Z",
+        //     "orderCreatedAt": "2024-03-12T09:42:37.766Z",
+        //     "timeInForce": "GTC"
+        // }
+        return this.parseOrder (response);
+    }
+
+    async fetchOpenOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        await this.loadMarkets ();
+        const response = await this.privateGetOrdersOpen (params);
+        // [{'orderId': 'aa6dce9a-6acb-477f-9da8-223127e6b32d',
+        // 'side': 'buy',
+        // 'remainingQuantity': '0.02',
+        // 'price': '100000',
+        // 'currencyPair': 'BTCZAR',
+        // 'createdAt': '2024-03-12T07:14:17.275Z',
+        // 'originalQuantity': '0.02',
+        // 'filledPercentage': '0.00',
+        // 'updatedAt': '2024-03-12T07:14:17.275Z',
+        // 'status': 'Placed',
+        // 'type': 'post-only limit',
+        // 'timeInForce': 'GTC'}]
+        let market = undefined;
+        if (symbol !== undefined) {
+            market = this.safeValue (this.markets, symbol);
+        }
+        return this.parseOrders (response, market, since, limit, params);
+    }
+
+    async fetchClosedOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        this.loadMarkets ();
+        const response = await this.privateGetOrdersHistory (params);
+        // [{'orderId': 'aa6dce9a-6acb-477f-9da8-223127e6b32d',
+        //   'orderStatusType': 'Cancelled',
+        //   'currencyPair': 'BTCZAR',
+        //   'averagePrice': '0',
+        //   'originalPrice': '100000',
+        //   'remainingQuantity': '0.02',
+        //   'originalQuantity': '0.02',
+        //   'total': '0',
+        //   'totalFee': '0',
+        //   'feeCurrency': 'BTC',
+        //   'orderSide': 'buy',
+        //   'orderType': 'post-only limit',
+        //   'failedReason': '',
+        //   'orderUpdatedAt': '2024-03-12T07:16:14.205Z',
+        //   'orderCreatedAt': '2024-03-12T07:14:17.275Z',
+        //   'timeInForce': 'GTC'}]
+        let market = undefined;
+        if (symbol !== undefined) {
+            market = this.safeValue (this.markets, symbol);
+        }
+        return this.parseOrders (response, market, since, limit, params);
+    }
+
+    parseOrder (order, market: Market = undefined): Order {
+        const orderStatus = this.safeString (order, 'status');
+        let status = undefined;
+        if (orderStatus === 'Placed' || orderStatus === 'Active') {
+            status = 'open';
+        } else if (orderStatus === 'Failed') {
+            status = 'canceled';
+        } else if (orderStatus === 'Filled') {
+            status = 'closed';
+        }
+        const orderType = this.safeString2 (order, 'type', 'orderType');
+        let type = undefined;
+        if (orderType === 'market') {
+            type = 'market';
+        } else if (orderType.indexOf ('limit')) {
+            type = 'limit';
+        }
+        const datetime = this.safeString2 (order, 'createdAt', 'orderCreatedAt');
+        const updateDatetime = this.safeString2 (order, 'updatedAt', 'orderUpdatedAt');
+        const result = {
+            'id': this.safeString (order, 'orderId'),
+            'clientOrderId': this.safeString (order, 'customerOrderId'),
+            'timestamp': this.parse8601 (datetime),
+            'datetime': datetime,
+            'symbol': this.safeSymbol (this.safeString (order, 'currencyPair')),
+            'type': type,
+            'side': this.safeString (order, 'side'),
+            'lastTradeTimestamp': undefined,
+            'lastUpdateTimestamp': this.parse8601 (updateDatetime),
+            'price': this.safeString (order, 'price'),
+            'amount': this.safeString (order, 'originalQuantity'),
+            'cost': undefined,
+            'average': this.safeString (order, 'averagePrice'),
+            'filled': undefined,
+            'remaining': this.safeString (order, 'remainingQuantity'),
+            'timeInForce': this.safeString (order, 'timeInForce'),
+            'postOnly': undefined,
+            'trades': undefined,
+            'reduceOnly': this.safeValue (order, 'reduceOnly'),
+            'triggerPrice': undefined,
+            'takeProfitPrice': undefined,
+            'stopLossPrice': undefined,
+            'status': status,
+            'fee': undefined,
+            'info': order,
+        };
+        return this.safeOrder (result, market);
+    }
+
+    async createOrder (symbol: string, type: OrderType, side: OrderSide, amount: number, price: number = undefined, params = {}): Promise<Order> {
+        this.loadMarkets ();
+        let response = {};
+        const market = this.marketId (symbol);
+        if (market === undefined) {
+            throw new InvalidOrder (this.id + ' createOrder() - "symbol" requires valid marketId but none found.');
+        }
+        if (side !== 'buy' && side !== 'sell') {
+            throw new InvalidOrder (this.id + ' createOrder() - "side" must be either "buy" or "sell".');
+        }
+        const body = {
+            'side': side.toUpperCase (),
+            'pair': market,
+        };
+        // Optional parameters
+        if (this.safeString (params, 'customerOrderId')) {
+            body['customerOrderId'] = this.safeString (params, 'customerOrderId');
+            this.omit (params, 'customerOrderId');
+        }
+        if (this.safeString (params, 'allowMargin')) {
+            body['allowMargin'] = this.safeString (params, 'allowMargin');
+            this.omit (params, 'allowMargin');
+        }
+        if (type === 'market') {
+            if (price) {
+                body['quoteAmount'] = amount;
+            } else {
+                body['baseAmount'] = amount;
+            }
+            response = await this.privatePostOrdersMarket (this.extend (body, params));
+        } else if (type === 'limit') {
+            body['price'] = price;
+            body['quantity'] = amount;
+            if (this.safeString (params, 'postOnly')) {
+                body['postOnly'] = this.safeBool (params, 'postOnly');
+            }
+            response = await this.privatePostOrdersLimit (params, body);
+        } else {
+            throw new InvalidOrder (this.id + ' createOrder() - "type" must be either "market" or "limit" to create an order.');
+        }
+        return this.safeOrder ({ 'id': this.safeString (response, 'id') });
+    }
+
+    async createOrders (orders: OrderRequest[], params = {}): Promise<Order[]> {
+        await this.loadMarkets ();
+        throw new NotSupported (this.id + ' createOrders() is not supported yet');
+        // const response = await this.privatePostBatchOrders ()
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        let url = this.urls['api'][api] + '/' + this.implodeParams (path, params);
+        const partialPath = this.implodeParams (path, params);
+        let url = this.urls['api'][api] + '/' + partialPath;
         const query = this.omit (params, this.extractParams (path));
         if (Object.keys (query).length) {
             url += '?' + this.urlencode (query);
@@ -502,10 +695,11 @@ export default class valr extends Exchange {
         if (body === undefined) {
             body = '';
         }
+        let signHeaders = undefined;
         if (api === 'private') {
+            const full_path = '/v' + this.version + '/' + partialPath;
             this.checkRequiredCredentials ();
             const timestamp = this.milliseconds ().toString ();
-            const full_path = '/v' + this.version + '/' + path;
             const message = timestamp + method.toUpperCase () + full_path + body;
             const payloadBase64 = this.stringToBase64 (message);
             const signature = this.hmac (
@@ -514,12 +708,12 @@ export default class valr extends Exchange {
                 sha512,
                 'hex'
             );
-            headers = {
+            signHeaders = {
                 'X-VALR-API-KEY': this.apiKey,
                 'X-VALR-SIGNATURE': signature,
                 'X-VALR-TIMESTAMP': timestamp,
             };
         }
-        return { 'url': url, 'method': method, 'body': body, 'headers': headers };
+        return { 'url': url, 'method': method, 'body': body, 'headers': this.deepExtend (headers, signHeaders) };
     }
 }

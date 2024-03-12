@@ -45,7 +45,7 @@ export default class valr extends Exchange {
                 'cancelOrder': false,
                 'createMarketBuyOrderWithCost': true,
                 'createMarketSellOrderWithCost': true,
-                'createOrder': false,
+                'createOrder': true,
                 'fetchAccounts': false,
                 'fetchBalance': true,
                 'fetchClosedOrders': true,
@@ -208,6 +208,9 @@ export default class valr extends Exchange {
                         'orders/order',
                     ],
                 },
+            },
+            'headers': {
+                'Content-Type': 'application/json',
             },
         });
     }
@@ -653,26 +656,27 @@ export default class valr extends Exchange {
         // Optional parameters
         if (this.safeString (params, 'customerOrderId')) {
             body['customerOrderId'] = this.safeString (params, 'customerOrderId');
-            this.omit (params, 'customerOrderId');
         }
         if (this.safeString (params, 'allowMargin')) {
             body['allowMargin'] = this.safeString (params, 'allowMargin');
-            this.omit (params, 'allowMargin');
         }
+        this.omit (params, [ 'allowMargin', 'customerOrderId' ]);
         if (type === 'market') {
             if (price) {
                 body['quoteAmount'] = amount;
             } else {
                 body['baseAmount'] = amount;
             }
+            this.omit (params, [ 'baseAmount', 'quoteAmount' ]);
             response = await this.privatePostOrdersMarket (this.extend (body, params));
         } else if (type === 'limit') {
-            body['price'] = price;
-            body['quantity'] = amount;
+            body['price'] = this.numberToString (price);
+            body['quantity'] = this.numberToString (amount);
             if (this.safeString (params, 'postOnly')) {
                 body['postOnly'] = this.safeBool (params, 'postOnly');
+                this.omit (params, 'postOnly');
             }
-            response = await this.privatePostOrdersLimit (params, body);
+            response = await this.privatePostOrdersLimit (this.extend (body, params));
         } else {
             throw new InvalidOrder (this.id + ' createOrder() - "type" must be either "market" or "limit" to create an order.');
         }
@@ -686,16 +690,22 @@ export default class valr extends Exchange {
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
+        this.log (path, ' API: ', api, ' Params: ', params, headers, body);
         const partialPath = this.implodeParams (path, params);
         let url = this.urls['api'][api] + '/' + partialPath;
         const query = this.omit (params, this.extractParams (path));
         if (Object.keys (query).length) {
-            url += '?' + this.urlencode (query);
+            if (method === 'POST') {
+                body = this.json (query);
+            } else {
+                url += '?' + this.urlencode (query);
+            }
         }
+        this.log ('Body: ', body, ' Url:', url);
+        let signHeaders = undefined;
         if (body === undefined) {
             body = '';
         }
-        let signHeaders = undefined;
         if (api === 'private') {
             const full_path = '/v' + this.version + '/' + partialPath;
             this.checkRequiredCredentials ();
@@ -709,6 +719,7 @@ export default class valr extends Exchange {
                 'hex'
             );
             signHeaders = {
+                // 'Content-Type': 'application/json',
                 'X-VALR-API-KEY': this.apiKey,
                 'X-VALR-SIGNATURE': signature,
                 'X-VALR-TIMESTAMP': timestamp,

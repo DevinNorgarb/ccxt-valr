@@ -42,7 +42,8 @@ export default class valr extends Exchange {
                 'swap': undefined,
                 'future': undefined,
                 'option': undefined,
-                'cancelOrder': false,
+                'cancelAllOrders': true,
+                'cancelOrder': true,
                 'createMarketBuyOrderWithCost': true,
                 'createMarketSellOrderWithCost': true,
                 'createOrder': true,
@@ -213,6 +214,16 @@ export default class valr extends Exchange {
                 'Content-Type': 'application/json',
             },
         });
+    }
+
+    checkRequiredSymbolAugument (methodName: string, symbol: string) {
+        if (symbol === undefined) {
+            throw new ArgumentsRequired (this.id + ' ' + methodName + '() requires valid symbol name');
+        }
+        const market = this.safeMarket (symbol);
+        if (market === undefined) {
+            throw new InvalidOrder (this.id + ' ' + methodName + '() found no valid market for symbol: ' + symbol);
+        }
     }
 
     async fetchStatus (params = {}): Promise<any> {
@@ -427,9 +438,10 @@ export default class valr extends Exchange {
 
     async fetchTicker (symbol: string, params = {}): Promise<Ticker> {
         await this.loadMarkets ();
-        const market = this.marketId (symbol);
+        this.checkRequiredSymbolAugument (this.id + ' fetchTicker', symbol);
+        const marketId = this.marketId (symbol);
         const request = {
-            'pair': market,
+            'pair': marketId,
         };
         const response = await this.publicGetPairMarketsummary (this.extend (request, params));
         return this.parseTicker (response);
@@ -515,14 +527,12 @@ export default class valr extends Exchange {
     }
 
     async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
-        this.loadMarkets ();
-        if (symbol === undefined) {
-            throw new ArgumentsRequired (this.id + ' fetchOrder() requires a symbol argument');
-        }
-        const market = this.marketId (symbol);
+        await this.loadMarkets ();
+        this.checkRequiredSymbolAugument ('fetchOrder', symbol);
+        const marketId = this.marketId (symbol);
         const request = {
             'id': id,
-            'pair': market,
+            'pair': marketId,
         };
         const response = await this.privateGetOrdersPairOrderidId (this.extend (request, params));
         // {
@@ -565,7 +575,7 @@ export default class valr extends Exchange {
     }
 
     async fetchClosedOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
-        this.loadMarkets ();
+        await this.loadMarkets ();
         const response = await this.privateGetOrdersHistory (params);
         // [{'orderId': 'aa6dce9a-6acb-477f-9da8-223127e6b32d',
         //   'orderStatusType': 'Cancelled',
@@ -602,10 +612,12 @@ export default class valr extends Exchange {
         }
         const orderType = this.safeString2 (order, 'type', 'orderType');
         let type = undefined;
-        if (orderType === 'market') {
-            type = 'market';
-        } else if (orderType.indexOf ('limit')) {
-            type = 'limit';
+        if (orderType !== undefined) {
+            if (orderType === 'market') {
+                type = 'market';
+            } else if (orderType.indexOf ('limit')) {
+                type = 'limit';
+            }
         }
         const datetime = this.safeString2 (order, 'createdAt', 'orderCreatedAt');
         const updateDatetime = this.safeString2 (order, 'updatedAt', 'orderUpdatedAt');
@@ -640,18 +652,16 @@ export default class valr extends Exchange {
     }
 
     async createOrder (symbol: string, type: OrderType, side: OrderSide, amount: number, price: number = undefined, params = {}): Promise<Order> {
-        this.loadMarkets ();
-        let response = {};
-        const market = this.marketId (symbol);
-        if (market === undefined) {
-            throw new InvalidOrder (this.id + ' createOrder() - "symbol" requires valid marketId but none found.');
-        }
+        await this.loadMarkets ();
+        let response = undefined;
+        this.checkRequiredSymbolAugument ('createOrder', symbol);
+        const marketId = this.marketId (symbol);
         if (side !== 'buy' && side !== 'sell') {
             throw new InvalidOrder (this.id + ' createOrder() - "side" must be either "buy" or "sell".');
         }
         const body = {
             'side': side.toUpperCase (),
-            'pair': market,
+            'pair': marketId,
         };
         // Optional parameters
         if (this.safeString (params, 'customerOrderId')) {
@@ -680,7 +690,7 @@ export default class valr extends Exchange {
         } else {
             throw new InvalidOrder (this.id + ' createOrder() - "type" must be either "market" or "limit" to create an order.');
         }
-        return this.safeOrder ({ 'id': this.safeString (response, 'id') });
+        return this.parseOrder ({ 'orderId': this.safeString (response, 'id'), 'currencyPair': marketId });
     }
 
     async createOrders (orders: OrderRequest[], params = {}): Promise<Order[]> {
@@ -689,19 +699,56 @@ export default class valr extends Exchange {
         // const response = await this.privatePostBatchOrders ()
     }
 
+    async editOrder (id: string, symbol: string, type: OrderType, side: OrderSide, amount: number = undefined, price: number = undefined, params = {}): Promise<Order> {
+        await this.loadMarkets ();
+        await this.cancelOrder (id, symbol);
+        return await this.createOrder (symbol, type, side, amount, price, params);
+        // TODO: Method currently in Beta
+        // await this.privatePutOrdersModify (this.entend (body, params));
+    }
+
+    async cancelOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
+        await this.loadMarkets ();
+        this.checkRequiredSymbolAugument ('cancelOrder', symbol);
+        const marketId = this.marketId (symbol);
+        const orderFormat = {
+            'orderId': id,
+            'pair': marketId,
+        };
+        await this.privateDeleteOrdersOrder (this.extend (orderFormat, params));
+        return this.parseOrder ({ 'id': id, 'currencyPair': marketId });
+    }
+
+    async cancelAllOrders (symbol: string = undefined, params = {}): Promise<Order[]> {
+        await this.loadMarkets ();
+        let response = undefined;
+        if (symbol === undefined) {
+            response = this.privateDeleteOrders (params);
+        } else {
+            this.checkRequiredSymbolAugument ('cancelAllOrders', symbol);
+            const marketId = this.marketId (symbol);
+            const body = {
+                'pair': marketId,
+            };
+            response = await this.privateDeleteOrdersPair (this.extend (body, params));
+            for (let i = 0; i < response.length; i++) {
+                response[i]['currencyPair'] = marketId;
+            }
+        }
+        return this.parseOrders (response);
+    }
+
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {
-        this.log (path, ' API: ', api, ' Params: ', params, headers, body);
         const partialPath = this.implodeParams (path, params);
         let url = this.urls['api'][api] + '/' + partialPath;
         const query = this.omit (params, this.extractParams (path));
         if (Object.keys (query).length) {
-            if (method === 'POST') {
+            if (method === 'POST' || method === 'PUT' || method === 'DELETE') {
                 body = this.json (query);
             } else {
                 url += '?' + this.urlencode (query);
             }
         }
-        this.log ('Body: ', body, ' Url:', url);
         let signHeaders = undefined;
         if (body === undefined) {
             body = '';

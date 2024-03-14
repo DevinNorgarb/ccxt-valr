@@ -10,6 +10,8 @@ import type {
     OrderSide,
     OrderRequest,
     Int,
+    OrderBook,
+    Trade,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -18,9 +20,6 @@ import {
     ArgumentsRequired,
     InvalidOrder,
 } from './base/errors.js';
-
-// import { ExchangeError,  AuthenticationError, RequestTimeout} from './base/errors.js';
-// import { Precise } from './base/Precise.js';
 
 /**
  * @class valr
@@ -47,24 +46,25 @@ export default class valr extends Exchange {
                 'createMarketBuyOrderWithCost': true,
                 'createMarketSellOrderWithCost': true,
                 'createOrder': true,
-                'fetchAccounts': false,
+                'fetchAccounts': true,
                 'fetchBalance': true,
                 'fetchClosedOrders': true,
                 'fetchCurrencies': true,
                 'fetchDepositAddress': false,
                 'fetchDeposits': false,
                 'fetchFundingLimits': false,
+                'fetchL3OrderBook': true,
                 'fetchLedger': false,
-                'fetchMyTrades': false,
+                'fetchMyTrades': true,
                 'fetchOHLCV': false,
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
-                'fetchOrderBook': false,
+                'fetchOrderBook': true,
                 'fetchOrders': true,
                 'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
-                'fetchTrades': false,
+                'fetchTrades': true,
                 'fetchTradingFees': false,
                 'fetchTransactions': false,
                 'fetchWithdrawals': false,
@@ -92,8 +92,8 @@ export default class valr extends Exchange {
             'api': {
                 'public': {
                     'get': [
-                        'marketdata/{pair}/orderbook',
-                        'marketdata/{pair}/orderbook/full',
+                        '{pair}/orderbook',
+                        '{pair}/orderbook/full',
                         'currencies',
                         'pairs',
                         'ordertypes',
@@ -115,10 +115,10 @@ export default class valr extends Exchange {
                         'account/balances',
                         'account/balances/all',
                         'account/transactionhistory',
+                        'account/{pair}/tradehistory',
                         'account/fees/trade',
                         'marketdata/{pair}/orderbook',
-                        'marketdata/{currency}/orderbook/full',
-                        'marketdata/{currency}/tradehistory',
+                        'marketdata/{pair}/orderbook/full',
                         'marketdata/{pair}/tradehistory',
                         'wallet/crypto/{currency}/deposit/address',
                         'wallet/crypto/{currency}/deposit/history',
@@ -469,6 +469,36 @@ export default class valr extends Exchange {
         return this.safeTicker (result);
     }
 
+    async fetchOrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        await this.loadMarkets ();
+        let response = undefined;
+        this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
+        params['pair'] = this.marketId (symbol);
+        if (this.checkRequiredCredentials (false)) {
+            response = await this.privateGetMarketdataPairOrderbook (params);
+        } else {
+            response = await this.publicGetPairOrderbook (params);
+        }
+        const lastDateChange = this.safeString (response, 'LastChange');
+        const timestamp = this.parse8601 (lastDateChange);
+        return this.parseOrderBook (response, symbol, timestamp, 'Bids', 'Asks', 'price', 'quantity', 'orderCount');
+    }
+
+    async fetchL3OrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        await this.loadMarkets ();
+        let response = undefined;
+        this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
+        params['pair'] = this.marketId (symbol);
+        if (this.checkRequiredCredentials (false)) {
+            response = await this.privateGetMarketdataPairOrderbookFull (params);
+        } else {
+            response = await this.publicGetPairOrderbookFull (params);
+        }
+        const lastDateChange = this.safeString (response, 'LastChange');
+        const timestamp = this.parse8601 (lastDateChange);
+        return this.parseOrderBook (response, symbol, timestamp, 'Bids', 'Asks', 'price', 'quantity', 'id');
+    }
+
     async fetchBalance (params = {}): Promise<Balances> {
         await this.loadMarkets ();
         const response = await this.privateGetAccountBalances (params);
@@ -524,6 +554,27 @@ export default class valr extends Exchange {
             };
         }
         return this.safeBalance (result);
+    }
+
+    async fetchAccounts (params = {}): Promise<any[]> {
+        const response = await this.privateGetAccountSubaccounts (params);
+        return this.parseAccounts (response, params);
+    }
+
+    parseAccount (account, params = {}) {
+        let accountType = undefined;
+        if (this.safeString (account, 'label') === 'Primary') {
+            accountType = 'main';
+        } else {
+            accountType = 'subaccount';
+        }
+        return {
+            'id': this.safeString (account, 'id'),
+            'type': accountType,
+            'name': this.safeString (account, 'label'),
+            'code': undefined,
+            'info': account,
+        };
     }
 
     async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
@@ -736,6 +787,129 @@ export default class valr extends Exchange {
             }
         }
         return this.parseOrders (response);
+    }
+
+    async fetchTrades (symbol: string, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        await this.loadMarkets ();
+        let response = undefined;
+        this.checkRequiredSymbolAugument ('fetchTrades', symbol);
+        params['pair'] = this.marketId (symbol);
+        if (this.checkRequiredCredentials (false)) {
+            response = await this.privateGetMarketdataPairTradehistory (params);
+            // [
+            //     {
+            //       "price": "43023",
+            //       "quantity": "0.01971316",
+            //       "currencyPair": "BTCUSDC",
+            //       "tradedAt": "2024-02-07T12:48:40.256Z",
+            //       "takerSide": "sell",
+            //       "sequenceId": 1204770707632816000,
+            //       "id": "37e5fba7-c5b7-11ee-b1a8-c700095e5df0",
+            //       "quoteVolume": "848.11928268"
+            //     },
+            //     {
+            //       "price": "42909",
+            //       "quantity": "0.00005173",
+            //       "currencyPair": "BTCUSDC",
+            //       "tradedAt": "2024-02-07T12:24:22.818Z",
+            //       "takerSide": "buy",
+            //       "sequenceId": 1204764594694783000,
+            //       "id": "d33297ae-c5b3-11ee-b1a8-c700095e5df0",
+            //       "quoteVolume": "2.21968257"
+            //     },
+            // ]
+        } else {
+            response = await this.publicGetPairTrades (params);
+            // [
+            //     {
+            //       "price": "43064",
+            //       "quantity": "0.00079928",
+            //       "currencyPair": "BTCUSDC",
+            //       "tradedAt": "2024-02-05T07:47:04.625Z",
+            //       "takerSide": "sell",
+            //       "sequenceId": 1203970033324130300,
+            //       "id": "c13c5166-c3fa-11ee-b1a8-c700095e5df0",
+            //       "quoteVolume": "34.42019392"
+            //     },
+            //     {
+            //       "price": "43010",
+            //       "quantity": "0.0001",
+            //       "currencyPair": "BTCUSDC",
+            //       "tradedAt": "2024-02-05T07:39:40.198Z",
+            //       "takerSide": "buy",
+            //       "sequenceId": 1203968169262186500,
+            //       "id": "b8562435-c3f9-11ee-b1a8-c700095e5df0",
+            //       "quoteVolume": "4.301"
+            //     },
+            // ]
+        }
+        return this.parseTrades (response, undefined, since, limit, params);
+    }
+
+    async fetchMyTrades (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        await this.loadMarkets ();
+        this.checkRequiredSymbolAugument ('fetchMyTrades', symbol);
+        params['pair'] = this.marketId (symbol);
+        const response = await this.privateGetAccountPairTradehistory (params);
+        // [
+        //     {
+        //       "price": "29001",
+        //       "quantity": "0.00137926",
+        //       "currencyPair": "BTCUSDC",
+        //       "tradedAt": "2024-02-07T06:00:30.180Z",
+        //       "side": "buy",
+        //       "sequenceId": 1204667988813283300,
+        //       "id": "32ad194e-c57e-11ee-9935-593da58a6690",
+        //       "orderId": "3fda280f-e87e-44c8-babf-852da844e514",
+        //       "fee": "0.000000413778",
+        //       "feeCurrency": "BTC"
+        //     },
+        //     {'price': '19.3017',
+        //     'quantity': '1',
+        //     'currencyPair': 'USDCZAR',
+        //     'tradedAt': '2024-02-27T14:46:44.852Z',
+        //     'side': 'sell',
+        //     'sequenceId': '1212048179894161409',
+        //     'id': '06e88b34-d57f-11ee-92bb-d59de6d96a53',
+        //     'orderId': '5ae9af1e-eb05-427e-af4f-50bcbd9dc8f1',
+        //     'makerReward': '0.0001',
+        //     'makerRewardCurrency': 'USDC'}
+        // ]
+        return this.parseTrades (response, undefined, since, limit, params);
+    }
+
+    parseTrade (trade: object, market: Market = undefined): Trade {
+        const symbol = this.safeSymbol (this.safeString (trade, 'currencyPair'));
+        const timestamp = this.parse8601 (this.safeString (trade, 'tradedAt'));
+        let takerOrMaker = undefined;
+        let feeCost = this.safeNumber2 (trade, 'fee', 'makerReward');
+        // let tradeType = undefined;
+        if (this.inArray ('makerReward', trade)) {
+            takerOrMaker = 'maker';
+            feeCost = (feeCost) ? -feeCost : feeCost;
+        } else {
+            takerOrMaker = 'taker';
+        }
+        const fee = {
+            'currency': this.safeString2 (trade, 'feeCurrency', 'makerRewardCurrency'),
+            'cost': feeCost,
+            'rate': undefined,
+        };
+        return this.safeTrade ({
+            'info': trade,
+            'timestamp': timestamp,
+            'datetime': this.safeString (trade, 'tradedAt'),
+            'id': this.safeString (trade, 'id'),
+            'order': this.safeString (trade, 'orderId'),
+            'symbol': symbol,
+            'type': (takerOrMaker === 'taker') ? 'market' : 'limit',
+            'side': this.safeString2 (trade, 'side', 'takerSide'),
+            'amount': this.safeNumber (trade, 'quantity'),
+            'price': this.safeNumber (trade, 'price'),
+            'cost': this.safeNumber (trade, 'quoteVolume'),
+            'takerOrMaker': takerOrMaker,
+            'fee': fee,
+        });
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

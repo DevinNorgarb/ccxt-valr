@@ -9,8 +9,8 @@ import { implicitReturnType } from '../base/types.js';
 import { Exchange as _Exchange } from '../base/Exchange.js';
 
 interface Exchange {
-    publicGetMarketdataPairOrderbook (params?: {}): Promise<implicitReturnType>;
-    publicGetMarketdataPairOrderbookFull (params?: {}): Promise<implicitReturnType>;
+    publicGetPairOrderbook (params?: {}): Promise<implicitReturnType>;
+    publicGetPairOrderbookFull (params?: {}): Promise<implicitReturnType>;
     publicGetCurrencies (params?: {}): Promise<implicitReturnType>;
     publicGetPairs (params?: {}): Promise<implicitReturnType>;
     publicGetOrdertypes (params?: {}): Promise<implicitReturnType>;
@@ -28,10 +28,10 @@ interface Exchange {
     privateGetAccountBalances (params?: {}): Promise<implicitReturnType>;
     privateGetAccountBalancesAll (params?: {}): Promise<implicitReturnType>;
     privateGetAccountTransactionhistory (params?: {}): Promise<implicitReturnType>;
+    privateGetAccountPairTradehistory (params?: {}): Promise<implicitReturnType>;
     privateGetAccountFeesTrade (params?: {}): Promise<implicitReturnType>;
     privateGetMarketdataPairOrderbook (params?: {}): Promise<implicitReturnType>;
-    privateGetMarketdataCurrencyOrderbookFull (params?: {}): Promise<implicitReturnType>;
-    privateGetMarketdataCurrencyTradehistory (params?: {}): Promise<implicitReturnType>;
+    privateGetMarketdataPairOrderbookFull (params?: {}): Promise<implicitReturnType>;
     privateGetMarketdataPairTradehistory (params?: {}): Promise<implicitReturnType>;
     privateGetWalletCryptoCurrencyDepositAddress (params?: {}): Promise<implicitReturnType>;
     privateGetWalletCryptoCurrencyDepositHistory (params?: {}): Promise<implicitReturnType>;

@@ -66,6 +66,7 @@ export default class valr extends Exchange {
                 'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
+                'fetchTime': true,
                 'fetchTrades': true,
                 'fetchTradingFees': true,
                 'fetchTransactions': false,
@@ -226,6 +227,11 @@ export default class valr extends Exchange {
         if (market === undefined) {
             throw new BadSymbol (this.id + ' ' + methodName + '() found no valid market for symbol: ' + symbol);
         }
+    }
+
+    async fetchTime (params = {}): Promise<number> {
+        const response = await this.publicGetTime (params);
+        return this.parse8601 (this.safeString (response, 'time'));
     }
 
     async fetchStatus (params = {}): Promise<any> {

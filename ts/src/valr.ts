@@ -19,6 +19,8 @@ import {
     NotSupported,
     ArgumentsRequired,
     InvalidOrder,
+    BadSymbol,
+    NullResponse,
 } from './base/errors.js';
 
 /**
@@ -65,7 +67,7 @@ export default class valr extends Exchange {
                 'fetchTicker': true,
                 'fetchTickers': true,
                 'fetchTrades': true,
-                'fetchTradingFees': false,
+                'fetchTradingFees': true,
                 'fetchTransactions': false,
                 'fetchWithdrawals': false,
                 'transfer': false,
@@ -222,7 +224,7 @@ export default class valr extends Exchange {
         }
         const market = this.safeMarket (symbol);
         if (market === undefined) {
-            throw new InvalidOrder (this.id + ' ' + methodName + '() found no valid market for symbol: ' + symbol);
+            throw new BadSymbol (this.id + ' ' + methodName + '() found no valid market for symbol: ' + symbol);
         }
     }
 
@@ -300,9 +302,9 @@ export default class valr extends Exchange {
         const result = {};
         for (let i = 0; i < currencies.length; i++) {
             const currency = currencies[i];
-            const code = this.safeCurrencyCode (this.safeString (currency, 'symbol'));
+            const code = this.safeCurrencyCode (this.safeString (currency, 'shortName'));
             result[code] = this.safeCurrencyStructure ({
-                'id': this.safeString (currency, 'symbol'),
+                'id': this.safeString (currency, 'shortName'),
                 'code': code,
                 'info': currency,
                 'name': this.safeString (currency, 'longName'),
@@ -910,6 +912,44 @@ export default class valr extends Exchange {
             'takerOrMaker': takerOrMaker,
             'fee': fee,
         });
+    }
+
+    async fetchTradingFees (params = {}) {
+        await this.loadMarkets ();
+        const response = await this.privateGetAccountFeesTrade (params);
+        if (!Array.isArray (response)) {
+            throw new NullResponse (this.id + ' ' + 'fetchTradingFees() received incorrect response');
+        }
+        const result = {};
+        for (let i = 0; i < response.length; i++) {
+            const tradeFee = response[i];
+            const symbol = this.safeSymbol (this.safeString (tradeFee, 'currencyPair'));
+            const maker = this.safeNumber (tradeFee, 'makerPercentage');
+            const taker = this.safeNumber (tradeFee, 'takerPercentage');
+            result[symbol] = {
+                'maker': (maker) ? maker / 100 : maker,
+                'taker': (taker) ? taker / 100 : taker,
+                'info': tradeFee,
+                'symbol': symbol,
+            };
+        }
+        return result;
+        // todo: Let fetchTradingFee only returned symbol instead of all - requires update in Exchange.ts
+        // todo: Update .market values with feeTrading values.
+    }
+
+    async loadTradingFees (params = {}) {
+        await this.loadMarkets ();
+        const tradingFees = await this.fetchTradingFees (params);
+        const tradingFeesList = this.toArray (tradingFees);
+        for (let i = 0; i < tradingFeesList.length; i++) {
+            const tradeFee = tradingFeesList[i];
+            const symbol = tradeFee['symbol'];
+            if (this.inArray (symbol, this.markets)) {
+                this.markets[symbol]['taker'] = tradeFee['taker'];
+                this.markets[symbol]['maker'] = tradeFee['maker'];
+            }
+        }
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

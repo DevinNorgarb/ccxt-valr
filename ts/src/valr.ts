@@ -12,6 +12,8 @@ import type {
     Int,
     OrderBook,
     Trade,
+    Currency,
+    Transaction,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -21,6 +23,7 @@ import {
     InvalidOrder,
     BadSymbol,
     NullResponse,
+    BadRequest,
 } from './base/errors.js';
 
 /**
@@ -52,8 +55,8 @@ export default class valr extends Exchange {
                 'fetchBalance': true,
                 'fetchClosedOrders': true,
                 'fetchCurrencies': true,
-                'fetchDepositAddress': false,
-                'fetchDeposits': false,
+                'fetchDepositAddress': true,
+                'fetchDeposits': true,
                 'fetchFundingLimits': false,
                 'fetchL3OrderBook': true,
                 'fetchLedger': false,
@@ -70,9 +73,9 @@ export default class valr extends Exchange {
                 'fetchTrades': true,
                 'fetchTradingFees': true,
                 'fetchTransactions': false,
-                'fetchWithdrawals': false,
+                'fetchWithdrawals': true,
                 'transfer': false,
-                'withdraw': false,
+                'withdraw': true,
             },
             'urls': {
                 'logo': undefined,
@@ -216,6 +219,12 @@ export default class valr extends Exchange {
             'headers': {
                 'Content-Type': 'application/json',
             },
+            'options': {
+                'fiat': {
+                    'ZAR': 'ZAR',
+                    'USD': 'USD',
+                },
+            },
         });
     }
 
@@ -227,6 +236,20 @@ export default class valr extends Exchange {
         if (market === undefined) {
             throw new BadSymbol (this.id + ' ' + methodName + '() found no valid market for symbol: ' + symbol);
         }
+    }
+
+    checkRequiredCurrencyCodeAugument (methodName: string, code: string) {
+        if (code === undefined) {
+            throw new ArgumentsRequired (this.id + ' ' + methodName + '() requires valid currency code name');
+        }
+        const currency = this.safeCurrency (code);
+        if (currency['id'] === undefined) {
+            throw new BadRequest (this.id + ' ' + methodName + '() found no valid currency ID for currency code: ' + code);
+        }
+    }
+
+    isFiat (code) {
+        return this.inArray (code, this.options['fiat']);
     }
 
     async fetchTime (params = {}): Promise<number> {
@@ -956,6 +979,191 @@ export default class valr extends Exchange {
                 this.markets[symbol]['maker'] = tradeFee['maker'];
             }
         }
+    }
+
+    async fetchDepositAddress (code: string, params = {}) {
+        await this.loadMarkets ();
+        this.checkRequiredCurrencyCodeAugument ('fetchDepositAddress', code);
+        let response = undefined;
+        const currency = this.safeCurrency (code);
+        const currencyId = {
+            'currency': currency['id'],
+        };
+        if (this.isFiat (code)) {
+            response = await this.privateGetWalletFiatCurrencyDepositReference (this.extend (currencyId, params));
+            // {'reference': 'USDGVVU6XR'}
+        } else {
+            response = await this.privateGetWalletCryptoCurrencyDepositAddress (this.extend (currencyId, params));
+            // {'currency': 'BTC',
+            // 'address': '3Af2LnWaUFS2wXmXQMugsEtnq7iJTEncfX',
+            // 'networkType': 'Bitcoin'}
+        }
+        return this.parseDepositAddress (response, currency);
+    }
+
+    parseDepositAddress (depositAddress, currency: Currency = undefined) {
+        const currencyId = this.safeString (currency, 'id');
+        return {
+            'currency': this.safeCurrencyCode (this.safeString (depositAddress, 'currency', currencyId)),
+            'network': this.safeString (depositAddress, 'networkType'),
+            'address': this.safeString2 (depositAddress, 'address', 'reference'),
+            'tag': this.safeString (depositAddress, 'paymentReference'),
+            'info': depositAddress,
+        };
+    }
+
+    async fetchDeposits (code: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
+        await this.loadMarkets ();
+        this.checkRequiredCurrencyCodeAugument ('fetchDeposits', code);
+        if (this.isFiat (code)) {
+            throw new NotSupported (this.id + ' fetchDeposits() is not supported yet for fiat currencies');
+        }
+        const currency = this.safeCurrency (code);
+        const currencyId = {
+            'currency': currency['id'],
+        };
+        const response = await this.privateGetWalletCryptoCurrencyDepositHistory (this.extend (currencyId, params));
+        // [
+        //     {
+        //       "currencyCode": "BTC",
+        //       "receiveAddress": "2MvLmR6cd4YVDFAU8BTujKkzrV1dwFaNHup",
+        //       "transactionHash": "fb588e3be006058c5853880421ef7241388270e2b506ce7ca553f8e5b797f628",
+        //       "networkType": "Bitcoin",
+        //       "amount": "0.01",
+        //       "createdAt": "2019-03-01T14:36:53Z",
+        //       "confirmations": 2,
+        //       "confirmed": true,
+        //       "confirmedAt": "2019-03-01T14:48:47.340347Z"
+        //     },
+        //     {
+        //       "currencyCode": "BTC",
+        //       "receiveAddress": "2MvLmR6cd4YVDFAU8BTujKkzrV1dwFaNHup",
+        //       "transactionHash": "a0a70db6c1b2f84caa562e8523f0aaee83c73d1e9ff97e9ec2d6b36f4ad56f3e",
+        //       "networkType": "Bitcoin",
+        //       "amount": "0.11229885",
+        //       "createdAt": "2019-01-11T08:54:20Z",
+        //       "confirmations": 0,
+        //       "confirmed": true,
+        //       "confirmedAt": "2019-01-11T09:30:57.265843Z"
+        //     }
+        //   ]
+        return this.parseTransactions (response);
+        // Todo - Update Exchange.ts fetchDeposits argument from symbol to code parameter
+    }
+
+    async fetchWithdrawals (code: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
+        await this.loadMarkets ();
+        this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
+        if (this.isFiat (code)) {
+            throw new NotSupported (this.id + ' fetchWithdrawals() is not supported yet for fiat currencies');
+        }
+        const currency = {
+            'currency': this.safeCurrency (code)['id'],
+        };
+        const response = await this.privateGetWalletCryptoCurrencyWithdrawHistory (this.extend (currency, params));
+        // [
+        //     {
+        //       "currency": "BTC",
+        //       "address": "invalidAddress123",
+        //       "amount": "0.0001",
+        //       "feeAmount": "0.0002",
+        //       "confirmations": 0,
+        //       "uniqueId": "2ab9dfce-7818-4812-9b33-fee7bd7c7c5a",
+        //       "createdAt": "2019-04-20T14:30:26.950Z",
+        //       "verified": true,
+        //       "status": "Failed",
+        //       "networkType": "Bitcoin"
+        //     },
+        //     {
+        //       "currency": "BTC",
+        //       "address": "mkHS9ne12qx9pS9VojpwU5xtRd4T7X7ZUt",
+        //       "amount": "0.19974963",
+        //       "feeAmount": "0.0002",
+        //       "transactionHash": "a79535cc38f515d1c3ecac364057521ffece9ed0ed11667ba2b83bcc8c065994",
+        //       "confirmations": 2,
+        //       "lastConfirmationAt": "2019-03-12T08:08:13.879189",
+        //       "uniqueId": "a243daf8-cc5d-4e61-9618-433e0d4c79ac",
+        //       "createdAt": "2019-03-11T10:36:23.739Z",
+        //       "verified": true,
+        //       "status": "Complete",
+        //       "networkType": "Bitcoin"
+        //     },
+        //     {
+        //       "currency": "BTC",
+        //       "address": "mkuKgijS7w4hjWL3Zs7kw7HQvM85a2F8RZ",
+        //       "amount": "0.01",
+        //       "feeAmount": "0.00055",
+        //       "transactionHash": "87d8701d3b241cc6a32b10388ad5c6f8cf9a9336d9e9fcd2592ad84b57473eb9",
+        //       "confirmations": 2,
+        //       "lastConfirmationAt": "2019-01-12T08:55:14.692649",
+        //       "uniqueId": "be612be3-06e3-4214-b81e-9bf8e645c28a",
+        //       "createdAt": "2019-01-11T12:56:21.080Z",
+        //       "verified": true,
+        //       "status": "Processing",
+        //       "networkType": "Bitcoin"
+        //     }
+        //   ]
+        return this.parseTransactions (response);
+        // Todo - Update Exchange.ts fetchDeposits argument from symbol to code parameter
+    }
+
+    async withdraw (code: string, amount: number, address: string, tag = undefined, params = {}): Promise<Transaction> {
+        await this.loadMarkets ();
+        this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
+        const currency = this.safeCurrency (code);
+        // todo: Include 'networkType' from default currency if none provided via params
+        let response = undefined;
+        if (this.isFiat (code)) {
+            const withdrawalBody = {
+                'currency': currency['id'],
+                'linkedBankAccountId': address,
+                'amount': this.numberToString (amount),
+            };
+            response = await this.privatePostWalletFiatCurrencyWithdraw (this.extend (withdrawalBody, params));
+        } else {
+            const withdrawalBody = {
+                'currency': currency['id'],
+                'address': address,
+                'amount': this.numberToString (amount),
+            };
+            response = await this.privatePostWalletCryptoCurrencyWithdraw (this.extend (withdrawalBody, params));
+        }
+        return this.parseTransaction (response);
+    }
+
+    parseTransaction (transaction, currency: Currency = undefined): Transaction {
+        const timestamp = this.parse8601 (this.safeString (transaction, 'createdAt'));
+        const code = this.safeCurrencyCode (this.safeString (transaction, 'currencyCode'));
+        let status = undefined;
+        if (this.safeBool (transaction, 'confirmed')) {
+            status = 'ok';
+        }
+        let transactionType = undefined;
+        if (this.inArray ('receiveAddress', transaction)) {
+            transactionType = 'deposit';
+        }
+        return {
+            'info': transaction,
+            'id': this.safeString (transaction, 'id'),
+            'txid': this.safeString (transaction, 'transactionHash'),
+            'timestamp': timestamp,
+            'datetime': this.iso8601 (timestamp),
+            'address': this.safeString (transaction, 'receiveAddress'),
+            'addressFrom': undefined,
+            'addressTo': undefined,
+            'tag': undefined,
+            'tagFrom': undefined,
+            'tagTo': undefined,
+            'type': transactionType,
+            'amount': this.safeNumber (transaction, 'amount'),
+            'currency': code,
+            'status': status,
+            'updated': this.parse8601 (this.safeString (transaction, 'confirmedAt')),
+            'fee': undefined,
+            'network': this.safeString (transaction, 'networkType'),
+            'comment': undefined,
+            'internal': undefined,
+        } as Transaction;
     }
 
     sign (path, api = 'public', method = 'GET', params = {}, headers = undefined, body = undefined) {

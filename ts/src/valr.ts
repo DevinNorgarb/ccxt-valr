@@ -1,4 +1,6 @@
+
 //  ---------------------------------------------------------------------------
+
 import Exchange from './abstract/valr.js';
 import type {
     Market,
@@ -25,6 +27,8 @@ import {
     NullResponse,
     BadRequest,
 } from './base/errors.js';
+
+// ---------------------------------------------------------------------------
 
 /**
  * @class valr
@@ -253,11 +257,27 @@ export default class valr extends Exchange {
     }
 
     async fetchTime (params = {}): Promise<number> {
+        /**
+         * @method
+         * @name valr#fetchTime
+         * @description fetches the current integer timestamp in milliseconds from the exchange server
+         * @see https://docs.valr.com/#95f84056-2ac7-4f92-a5d9-fd0d9c104f01
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {int} the current integer timestamp in milliseconds from the exchange server
+         */
         const response = await this.publicGetTime (params);
         return this.parse8601 (this.safeString (response, 'time'));
     }
 
     async fetchStatus (params = {}): Promise<any> {
+        /**
+         * @method
+         * @name valr#fetchCurrencies
+         * @see https://docs.valr.com/#88ab52a2-d63b-48b2-8984-d0982baec40a
+         * @description fetch status of exchange
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} A [exchange status structure]{@link https://docs.ccxt.com/#/?id=exchange-status-structure}
+         */
         const response = await this.publicGetStatus (params);
         const statusReport = this.safeString (response, 'status');
         let status = undefined;
@@ -276,10 +296,14 @@ export default class valr extends Exchange {
     }
 
     async fetchCurrencies (params = {}) {
-        // markets are returned as a list
-        // currencies are returned as a dict
-        // this is for historical reasons
-        // and may be changed for consistency later
+        /**
+         * @method
+         * @name valr#fetchCurrencies
+         * @see https://docs.valr.com/#88ab52a2-d63b-48b2-8984-d0982baec40a
+         * @description fetches all available currencies on an exchange
+         * @param {{}} [params={}] extra parameters specific to the exchange API endpoint
+         * @returns {object} an associative dictionary of [Currency Structure]{@link https://docs.ccxt.com/#/?id=currency-structure}
+         */
         const currencies = await this.publicGetCurrencies (params);
         // [
         //     {
@@ -345,6 +369,14 @@ export default class valr extends Exchange {
     }
 
     async fetchMarkets (params = {}) {
+        /**
+         * @method
+         * @name valr#fetchMarkets
+         * @description retrieves data on all markets for valr
+         * @see https://docs.valr.com/#cfa57d7e-2106-4066-bc27-c10210b6aa82
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a list of [Market Structure]{@link https://docs.ccxt.com/#/?id=market-structure}
+         */
         const markets = await this.publicGetPairs (params);
         // [
         //     {'symbol': 'ENJUSDC',
@@ -433,6 +465,15 @@ export default class valr extends Exchange {
     }
 
     async fetchTickers (symbols: string[] = undefined, params = {}): Promise<Tickers> {
+        /**
+         * @method
+         * @name valr#fetchTickers
+         * @see https://docs.valr.com/#cd1f0448-3da3-44cf-b00d-91edd74e7e19
+         * @description fetch market statistics for the multiple markets on the exchange
+         * @param {string} [symbol] unified symbol of the market the order was made in
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a assiative array of [Ticker Structure]{@link https://docs.ccxt.com/#/?id=ticker-structure}
+         */
         await this.loadMarkets ();
         const response = await this.publicGetMarketsummary (params);
         // [
@@ -468,6 +509,15 @@ export default class valr extends Exchange {
     }
 
     async fetchTicker (symbol: string, params = {}): Promise<Ticker> {
+        /**
+         * @method
+         * @name valr#fetchTicker
+         * @see https://docs.valr.com/#89b446bb-60a6-42ff-aa09-29e4918a9eb0
+         * @description fetch market statistics for a market on the exchange
+         * @param {string} symbol unified symbol of the market the order was made in
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a [Ticker Structure]{@link https://docs.ccxt.com/#/?id=ticker-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredSymbolAugument (this.id + ' fetchTicker', symbol);
         const marketId = this.marketId (symbol);
@@ -501,6 +551,16 @@ export default class valr extends Exchange {
     }
 
     async fetchOrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        /**
+         * @method
+         * @name valr#fetchOrderBook
+         * @see https://docs.valr.com/#89b446bb-60a6-42ff-aa09-29e4918a9eb0
+         * @description fetches upto a maximum of the top 40 bids and asks in the order book
+         * @param {string} symbol unified symbol of the market the order was made in
+         * @param {Int} [limit] the maximum number of order book structures to retrieve
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a [Order Book Structure]{@link https://docs.ccxt.com/#/?id=order-book-structure}
+         */
         await this.loadMarkets ();
         let response = undefined;
         this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
@@ -516,6 +576,16 @@ export default class valr extends Exchange {
     }
 
     async fetchL3OrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        /**
+         * @method
+         * @name valr#fetchL3OrderBook
+         * @see https://docs.valr.com/#c2acf6b9-dbba-4e6a-9075-a7907360812d
+         * @description fetches all bids and asks in the order book
+         * @param {string} symbol unified symbol of the market the order was made in
+         * @param {Int} [limit] the maximum number of order book structures to retrieve
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a [Order Book Structure]{@link https://docs.ccxt.com/#/?id=order-book-structure}
+         */
         await this.loadMarkets ();
         let response = undefined;
         this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
@@ -531,6 +601,14 @@ export default class valr extends Exchange {
     }
 
     async fetchBalance (params = {}): Promise<Balances> {
+        /**
+         * @method
+         * @name valr#fetchBalance
+         * @see https://docs.valr.com/#60455ec7-ecdc-42ad-9a57-64941299da52
+         * @description fetches the the balances in all currencies on the user account.
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a associative array of [balance structure]{@link https://docs.ccxt.com/#/?id=balance-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privateGetAccountBalances (params);
         // [
@@ -588,6 +666,14 @@ export default class valr extends Exchange {
     }
 
     async fetchAccounts (params = {}): Promise<any[]> {
+        /**
+         * @method
+         * @name valr#fetchAccounts
+         * @see https://docs.valr.com/#9443d7ce-c1c5-4597-b43e-d8fc2e7b49a7
+         * @description fetch all the accounts associated with a profile
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a dictionary of [account structures]{@link https://docs.ccxt.com/#/?id=account-structure} indexed by the account type
+         */
         const response = await this.privateGetAccountSubaccounts (params);
         return this.parseAccounts (response, params);
     }
@@ -609,6 +695,16 @@ export default class valr extends Exchange {
     }
 
     async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
+        /**
+         * @method
+         * @name valr#fetchOrder
+         * @see https://docs.valr.com/#8d9252e1-ee27-495e-86ed-57458bdafd19
+         * @description fetches information on an order made by the user
+         * @param {string} id order id
+         * @param {string} symbol unified symbol of the market the order was made in
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredSymbolAugument ('fetchOrder', symbol);
         const marketId = this.marketId (symbol);
@@ -635,6 +731,17 @@ export default class valr extends Exchange {
     }
 
     async fetchOpenOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        /**
+         * @method
+         * @name valr#fetchOpenOrders
+         * @description fetches information on all order made by the user
+         * @see https://docs.valr.com/#910bc498-b88d-48e8-b392-6cc94b8cb66d
+         * @param {string} [symbol] unified symbol of the market the order was made in
+         * @param {int} [since] the earliest time in ms to fetch orders for
+         * @param {int} [limit] the maximum number of order structures to retrieve
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a list of [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privateGetOrdersOpen (params);
         // [{'orderId': 'aa6dce9a-6acb-477f-9da8-223127e6b32d',
@@ -657,6 +764,17 @@ export default class valr extends Exchange {
     }
 
     async fetchClosedOrders (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        /**
+         * @method
+         * @name valr#fetchOpenOrders
+         * @description fetches information on all closed order made by the user
+         * @see https://docs.valr.com/#0d7cc0ff-b8ca-4e1f-980e-36d07672e53d
+         * @param {string} [symbol] unified symbol of the market the order was made in
+         * @param {int} [since] the earliest time in ms to fetch orders for
+         * @param {int} [limit] the maximum number of order structures to retrieve
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a list of [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
+         */
         await this.loadMarkets ();
         const response = await this.privateGetOrdersHistory (params);
         // [{'orderId': 'aa6dce9a-6acb-477f-9da8-223127e6b32d',
@@ -734,6 +852,22 @@ export default class valr extends Exchange {
     }
 
     async createOrder (symbol: string, type: OrderType, side: OrderSide, amount: number, price: number = undefined, params = {}): Promise<Order> {
+        /**
+         * @method
+         * @name valr#createOrder
+         * @see https://docs.valr.com/#5beb7328-24ca-4d8a-84f2-6029725ad923
+         * @description Create a trade order
+         * @param {string} symbol unified symbol of the market to create an order in
+         * @param {string} type 'market' or 'limit'
+         * @param {string} side 'buy' or 'sell'
+         * @param {float} amount how much of currency you want to trade in units of base currency
+         * @param {float} [price] the price at which the order is to be fullfilled, in units of the quote currency. If included in market order, use quote amount
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @param {object} [params.postOnly] if true will place a limit order and fail if matched immidiately
+         * @param {object} [params.customerOrderId] an optional field which can be specified by clients to track this order using their own internal order management systems
+         * @param {object} [params.allowMargin] Set to true for a margin / leverage trade
+         * @returns {object} an [order structure]{@link https://docs.ccxt.com/#/?id=order-structure} with only the id and symbol added
+         */
         await this.loadMarkets ();
         let response = undefined;
         this.checkRequiredSymbolAugument ('createOrder', symbol);
@@ -790,6 +924,16 @@ export default class valr extends Exchange {
     }
 
     async cancelOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {
+        /**
+         * @method
+         * @name valr#cancelOrder
+         * @see https://docs.valr.com/#3d9ba169-7222-4c0f-ab08-87c22162c0c4
+         * @description cancels an open order
+         * @param {string} id order id
+         * @param {string} symbol unified symbol of the market the order was made in
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} an [order structure]{@link https://docs.ccxt.com/#/?id=order-structure} with only the id and symbol added
+         */
         await this.loadMarkets ();
         this.checkRequiredSymbolAugument ('cancelOrder', symbol);
         const marketId = this.marketId (symbol);
@@ -802,6 +946,15 @@ export default class valr extends Exchange {
     }
 
     async cancelAllOrders (symbol: string = undefined, params = {}): Promise<Order[]> {
+        /**
+         * @method
+         * @name valr#cancelAllOrders
+         * @see https://docs.valr.com/#90822956-7e25-48a8-bd14-a83fb8766b46
+         * @description cancels all an open order or all open orders on a specific market
+         * @param {string} [symbol] unified symbol of the market the order was made in
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} an list of [order structure]{@link https://docs.ccxt.com/#/?id=order-structure} with only the id and option symbol added
+         */
         await this.loadMarkets ();
         let response = undefined;
         if (symbol === undefined) {
@@ -821,6 +974,18 @@ export default class valr extends Exchange {
     }
 
     async fetchTrades (symbol: string, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        /**
+         * @method
+         * @name valr#fetchTrades
+         * @see https://docs.valr.com/#68ecbf66-c8ab-4460-a1f3-5b245b15877e
+         * @see https://docs.valr.com/#8e9429c0-f43b-4483-a2be-d03cd1bbb230
+         * @description get the list of most recent trades for a particular symbol. If API keys present, use private API call for improved rate limits
+         * @param {string} symbol unified symbol of the market to fetch trades for
+         * @param {int} [since] timestamp in ms of the earliest trade to fetch
+         * @param {int} [limit] the maximum amount of trades to fetch
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {Trade[]} a list of [trade structures]{@link https://docs.ccxt.com/#/?id=trade-structure}
+         */
         await this.loadMarkets ();
         let response = undefined;
         this.checkRequiredSymbolAugument ('fetchTrades', symbol);
@@ -878,6 +1043,18 @@ export default class valr extends Exchange {
     }
 
     async fetchMyTrades (symbol: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        /**
+         * @method
+         * @name valr#fetchTrades
+         * @see https://docs.valr.com/#68ecbf66-c8ab-4460-a1f3-5b245b15877e
+         * @see https://docs.valr.com/#8e9429c0-f43b-4483-a2be-d03cd1bbb230
+         * @description get the list of most recent trades for a particular symbol for the profile.
+         * @param {string} symbol unified symbol of the market to fetch trades for
+         * @param {int} [since] timestamp in ms of the earliest trade to fetch
+         * @param {int} [limit] the maximum amount of trades to fetch
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {Trade[]} a list of [trade structures]{@link https://docs.ccxt.com/#/?id=trade-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredSymbolAugument ('fetchMyTrades', symbol);
         params['pair'] = this.marketId (symbol);
@@ -944,6 +1121,14 @@ export default class valr extends Exchange {
     }
 
     async fetchTradingFees (params = {}) {
+        /**
+         * @method
+         * @name valr#fetchTradingFees
+         * @see https://docs.valr.com/#00502bc7-bf1e-40d5-b284-25fa719f0229
+         * @description fetch the trading fees for multiple markets
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a dictionary of [fee structures]{@link https://docs.ccxt.com/#/?id=fee-structure} indexed by market symbols
+         */
         await this.loadMarkets ();
         const response = await this.privateGetAccountFeesTrade (params);
         if (!Array.isArray (response)) {
@@ -982,6 +1167,16 @@ export default class valr extends Exchange {
     }
 
     async fetchDepositAddress (code: string, params = {}) {
+        /**
+         * @method
+         * @name valr#fetchDepositAddress
+         * @see https://docs.valr.com/#b10ea5dd-00cb-4c33-bb28-53104a8f1b7b
+         * @see https://docs.valr.com/#619d83fa-f562-4ed3-a573-81afbafd2f1c
+         * @description fetch the deposit address for a currency associated with this account
+         * @param {string} code unified currency code
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} an [address structure]{@link https://docs.ccxt.com/#/?id=address-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredCurrencyCodeAugument ('fetchDepositAddress', code);
         let response = undefined;
@@ -1013,6 +1208,17 @@ export default class valr extends Exchange {
     }
 
     async fetchDeposits (code: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
+        /**
+         * @method
+         * @name valr#fetchDeposits
+         * @description fetch all deposits made to an account
+         * @see https://docs.valr.com/#1061d8de-3792-4a0a-8ae6-715cb8a5179e
+         * @param {string} code unified currency code
+         * @param {int} [since] the earliest time in ms to fetch deposits for
+         * @param {int} [limit] the maximum number of deposits structures to retrieve
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object[]} a list of [transaction structures]{@link https://docs.ccxt.com/#/?id=transaction-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredCurrencyCodeAugument ('fetchDeposits', code);
         if (this.isFiat (code)) {
@@ -1052,6 +1258,17 @@ export default class valr extends Exchange {
     }
 
     async fetchWithdrawals (code: string = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Transaction[]> {
+        /**
+         * @method
+         * @name valr#fetchWithdrawals
+         * @see https://docs.valr.com/#d166dbf5-e922-4037-b0a7-5d490796662c
+         * @description fetch history of withdrawals
+         * @param {string} [code] unified currency code for the currency of the deposit/withdrawals, default is undefined
+         * @param {int} [since] timestamp in ms of the earliest deposit/withdrawal, default is undefined
+         * @param {int} [limit] max number of deposit/withdrawals to return, default is undefined
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a list of [transaction structure]{@link https://docs.ccxt.com/#/?id=transaction-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
         if (this.isFiat (code)) {
@@ -1108,6 +1325,19 @@ export default class valr extends Exchange {
     }
 
     async withdraw (code: string, amount: number, address: string, tag = undefined, params = {}): Promise<Transaction> {
+        /**
+         * @method
+         * @name valr#withdraw
+         * @see https://docs.valr.com/#bb0ad4dc-a28d-41a3-8e59-5070bc589c5a
+         * @see https://docs.valr.com/#fb4db187-530b-4632-b933-7bdfd192bcf5
+         * @description make a withdrawal
+         * @param {string} code unified currency code
+         * @param {float} amount the amount to withdraw
+         * @param {string} address the address to withdraw to
+         * @param {string} tag
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns {object} a [transaction structure]{@link https://docs.ccxt.com/#/?id=transaction-structure}
+         */
         await this.loadMarkets ();
         this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
         const currency = this.safeCurrency (code);

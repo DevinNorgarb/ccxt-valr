@@ -16,6 +16,7 @@ import type {
     Trade,
     Currency,
     Transaction,
+    Account,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -692,7 +693,7 @@ export default class valr extends Exchange {
         return this.safeBalance (result);
     }
 
-    async fetchAccounts (params = {}): Promise<any[]> {
+    async fetchAccounts (params = {}): Promise<Account[]> {
         /**
          * @method
          * @name valr#fetchAccounts
@@ -719,7 +720,7 @@ export default class valr extends Exchange {
             'name': this.safeString (account, 'label'),
             'code': undefined,
             'info': account,
-        };
+        } as Account;
     }
 
     async fetchOrder (id: string, symbol: string = undefined, params = {}): Promise<Order> {

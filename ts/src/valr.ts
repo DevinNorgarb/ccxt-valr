@@ -678,7 +678,7 @@ export default class valr extends Exchange {
         return this.parseAccounts (response, params);
     }
 
-    parseAccount (account, params = {}) {
+    parseAccount (account) {
         let accountType = undefined;
         if (this.safeString (account, 'label') === 'Primary') {
             accountType = 'main';

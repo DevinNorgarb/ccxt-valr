@@ -253,7 +253,7 @@ export default class valr extends Exchange {
     }
 
     isFiat (code) {
-        return this.inArray (code, this.options['fiat']);
+        return (code in this.options['fiat']);
     }
 
     async fetchTime (params = {}): Promise<number> {
@@ -272,7 +272,7 @@ export default class valr extends Exchange {
     async fetchStatus (params = {}): Promise<any> {
         /**
          * @method
-         * @name valr#fetchCurrencies
+         * @name valr#fetchStatus
          * @see https://docs.valr.com/#88ab52a2-d63b-48b2-8984-d0982baec40a
          * @description fetch status of exchange
          * @param {object} [params] extra parameters specific to the exchange API endpoint
@@ -356,13 +356,20 @@ export default class valr extends Exchange {
         for (let i = 0; i < currencies.length; i++) {
             const currency = currencies[i];
             const code = this.safeCurrencyCode (this.safeString (currency, 'shortName'));
+            let precision = this.safeInteger (currency, 'decimalPlaces');
+            // Siacoin reports precision of 24 which does not pass build test
+            if ((precision !== undefined) && (precision > 18)) {
+                precision = 18;
+            }
             result[code] = this.safeCurrencyStructure ({
                 'id': this.safeString (currency, 'shortName'),
                 'code': code,
                 'info': currency,
                 'name': this.safeString (currency, 'longName'),
                 'active': this.safeString (currency, 'isActive'),
-                'precision': this.safeString (currency, 'decimalPlaces'),
+                'precision': precision,
+                'withdraw': ('supportedNetworks' in currency) ? true : false,
+                'deposit': ('supportedNetworks' in currency) ? true : false,
             });
         }
         return result;
@@ -418,7 +425,12 @@ export default class valr extends Exchange {
         let spot = undefined;
         let swap = undefined;
         let symbol = base + '/' + quote;
+        // required for future contracts
         let contract = false;
+        let linear = undefined;
+        let contractSize = undefined;
+        let settle = undefined;
+        let settleId = undefined;
         if (currencyPairType === 'SPOT') {
             marketType = 'spot';
             spot = true;
@@ -428,6 +440,13 @@ export default class valr extends Exchange {
             swap = true;
             symbol = symbol + ':' + quote;
             contract = true;
+            // Guess value
+            contractSize = this.parseNumber ('1');
+            // According to docs: https://support.valr.com/hc/en-us/articles/11078306427420-Perpetual-Futures-Trading-Guide
+            linear = true;
+            settle = base;
+            settleId = this.safeString (market, 'baseCurrency');
+            symbol = base + '/' + quote + ':' + settle;
         }
         return this.safeMarketStructure ({
             'id': this.safeString (market, 'symbol'),
@@ -446,9 +465,17 @@ export default class valr extends Exchange {
             'contract': contract,
             'percentage': true,
             'tierBased': false,
+            'linear': linear,
+            'contractSize': contractSize,
+            'settle': settle,
+            'settleId': settleId,
+            // Setting defaults based on exchange not on response
+            // These values are actually from private API call and can be overwriten with loadTradingFees
+            'maker': -0.001,
+            'taker': 0.01,
             'precision': {
-                'price': this.safeFloat (market, 'baseDecimalPlaces'),
-                'amount': this.safeFloat (market, 'tickSize'),
+                'price': this.precisionFromString (this.safeString (market, 'tickSize')),
+                'amount': this.safeInteger (market, 'baseDecimalPlaces'),
             },
             'limits': {
                 'amount': {
@@ -543,7 +570,7 @@ export default class valr extends Exchange {
             'last': this.safeString (ticker, 'lastTradedPrice'),
             'previousClose': this.safeString (ticker, 'previousClosePrice'),
             'average': this.safeString (ticker, 'markPrice'),
-            'change': this.safeString (ticker, 'changeFromPrevious'),
+            'change': undefined,
             'baseVolume': this.safeString (ticker, 'baseVolume'),
             'quoteVolume': this.safeString (ticker, 'quoteVolume'),
         };
@@ -685,6 +712,7 @@ export default class valr extends Exchange {
         } else {
             accountType = 'subaccount';
         }
+        // Todo: Use account structure
         return {
             'id': this.safeString (account, 'id'),
             'type': accountType,
@@ -1092,7 +1120,7 @@ export default class valr extends Exchange {
         let takerOrMaker = undefined;
         let feeCost = this.safeNumber2 (trade, 'fee', 'makerReward');
         // let tradeType = undefined;
-        if (this.inArray ('makerReward', trade)) {
+        if ('makerReward' in trade) {
             takerOrMaker = 'maker';
             feeCost = (feeCost) ? -feeCost : feeCost;
         } else {
@@ -1138,14 +1166,19 @@ export default class valr extends Exchange {
         for (let i = 0; i < response.length; i++) {
             const tradeFee = response[i];
             const symbol = this.safeSymbol (this.safeString (tradeFee, 'currencyPair'));
-            const maker = this.safeNumber (tradeFee, 'makerPercentage');
-            const taker = this.safeNumber (tradeFee, 'takerPercentage');
-            result[symbol] = {
-                'maker': (maker) ? maker / 100 : maker,
-                'taker': (taker) ? taker / 100 : taker,
-                'info': tradeFee,
-                'symbol': symbol,
-            };
+            if (('makerPercentage' in tradeFee) && ('takerPercentage' in tradeFee)) {
+                const maker = this.safeNumber (tradeFee, 'makerPercentage');
+                const taker = this.safeNumber (tradeFee, 'takerPercentage');
+                result[symbol] = {
+                    'maker': (maker) ? maker / 100 : maker,
+                    'taker': (taker) ? taker / 100 : taker,
+                    'info': tradeFee,
+                    'symbol': symbol,
+                };
+            } else {
+                // Trading pair only avialble on VALR simple buy/sell platform and not trading platform.
+                continue;
+            }
         }
         return result;
         // todo: Let fetchTradingFee only returned symbol instead of all - requires update in Exchange.ts
@@ -1369,7 +1402,7 @@ export default class valr extends Exchange {
             status = 'ok';
         }
         let transactionType = undefined;
-        if (this.inArray ('receiveAddress', transaction)) {
+        if ('receiveAddress' in transaction) {
             transactionType = 'deposit';
         }
         return {
@@ -1408,14 +1441,14 @@ export default class valr extends Exchange {
             }
         }
         let signHeaders = undefined;
-        if (body === undefined) {
-            body = '';
-        }
         if (api === 'private') {
             const full_path = '/v' + this.version + '/' + partialPath;
             this.checkRequiredCredentials ();
             const timestamp = this.milliseconds ().toString ();
-            const message = timestamp + method.toUpperCase () + full_path + body;
+            let message = timestamp + method.toUpperCase () + full_path;
+            if (body !== undefined) {
+                message += body;
+            }
             const payloadBase64 = this.stringToBase64 (message);
             const signature = this.hmac (
                 this.base64ToBinary (payloadBase64),

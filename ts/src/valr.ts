@@ -56,6 +56,7 @@ export default class valr extends Exchange {
                 'createMarketBuyOrderWithCost': true,
                 'createMarketSellOrderWithCost': true,
                 'createOrder': true,
+                'createPostOnlyOrder': true,
                 'fetchAccounts': true,
                 'fetchBalance': true,
                 'fetchClosedOrders': true,
@@ -70,7 +71,9 @@ export default class valr extends Exchange {
                 'fetchOpenOrders': true,
                 'fetchOrder': true,
                 'fetchOrderBook': true,
+                'fetchOrderBooks': false,
                 'fetchOrders': true,
+                'fetchPermissions': true,
                 'fetchStatus': true,
                 'fetchTicker': true,
                 'fetchTickers': true,
@@ -626,6 +629,29 @@ export default class valr extends Exchange {
         const lastDateChange = this.safeString (response, 'LastChange');
         const timestamp = this.parse8601 (lastDateChange);
         return this.parseOrderBook (response, symbol, timestamp, 'Bids', 'Asks', 'price', 'quantity', 'id');
+    }
+
+    async fetchPermissions (params = {}) {
+        /**
+         * @method
+         * @name valr#fetchPermissions
+         * @see https://docs.valr.com/#af083ac6-0514-4979-9bab-f599ea1bed4f
+         * @description returns the current API Key's information and permissions.
+         * @param {object} [params] extra parameters specific to the exchange API endpoint
+         * @returns an associative array with API enable permissions
+         */
+        this.checkRequiredCredentials ();
+        const response = this.privateGetAccountApiKeysCurrent (params);
+        const permissions = this.safeValue (response, 'permissions');
+        return {
+            'info': response,
+            'created': this.parse8601 (this.safeString (response, 'addedAt')),
+            'viewaccess': this.inArray ('View access', permissions),
+            'trade': this.inArray ('Trade', permissions),
+            'cryptwithdraws': this.inArray ('Withdraw', permissions),
+            'fiatwithdraws': this.inArray ('Link bank account', permissions),
+            'transfers': this.inArray ('Internal Transfer', permissions),
+        };
     }
 
     async fetchBalance (params = {}): Promise<Balances> {

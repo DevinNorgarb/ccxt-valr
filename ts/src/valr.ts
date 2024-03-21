@@ -17,6 +17,7 @@ import type {
     Currency,
     Transaction,
     Account,
+    Str,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -95,6 +96,7 @@ export default class valr extends Exchange {
                 'doc': [
                     'https://docs.valr.com/',
                 ],
+                'fees': 'https://support.valr.com/hc/en-us/articles/360015777451-What-are-VALR-s-charges',
                 'referral': {
                     'url': 'https://www.valr.com/invite/VAE2R2GV',
                 },
@@ -227,10 +229,20 @@ export default class valr extends Exchange {
             'headers': {
                 'Content-Type': 'application/json',
             },
+            'fees': {
+                'trading': {
+                    'percentage': true,
+                    'maker': this.parseNumber ('-0.0001'),
+                    'taker': this.parseNumber ('0.003'),
+                },
+            },
             'options': {
                 'fiat': {
                     'ZAR': 'ZAR',
                     'USD': 'USD',
+                },
+                'tradingFeesByQuoteCurrency': {
+                    'ZAR': 0.001,
                 },
             },
         });
@@ -475,8 +487,8 @@ export default class valr extends Exchange {
             'settleId': settleId,
             // Setting defaults based on exchange not on response
             // These values are actually from private API call and can be overwriten with loadTradingFees
-            'maker': -0.001,
-            'taker': 0.01,
+            'taker': this.safeNumber (this.options['tradingFeesByQuoteCurrency'], quote, this.fees['trading']['taker']),
+            'maker': this.parseNumber (this.fees['trading']['maker']),
             'precision': {
                 'price': this.precisionFromString (this.safeString (market, 'tickSize')),
                 'amount': this.safeInteger (market, 'baseDecimalPlaces'),
@@ -1194,11 +1206,13 @@ export default class valr extends Exchange {
             const tradeFee = response[i];
             const symbol = this.safeSymbol (this.safeString (tradeFee, 'currencyPair'));
             if (('makerPercentage' in tradeFee) && ('takerPercentage' in tradeFee)) {
-                const maker = this.safeNumber (tradeFee, 'makerPercentage');
-                const taker = this.safeNumber (tradeFee, 'takerPercentage');
+                let makerStr: Str = this.safeString (tradeFee, 'makerPercentage');
+                let takerStr: Str = this.safeString (tradeFee, 'takerPercentage');
+                makerStr = Precise.stringDiv (makerStr, 100);
+                takerStr = Precise.stringDiv (takerStr, 100);
                 result[symbol] = {
-                    'maker': (maker) ? maker / 100 : maker,
-                    'taker': (taker) ? taker / 100 : taker,
+                    'maker': this.parseNumber (makerStr),
+                    'taker': this.parseNumber (takerStr),
                     'info': tradeFee,
                     'symbol': symbol,
                 };

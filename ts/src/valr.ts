@@ -453,7 +453,7 @@ export default class valr extends Exchange {
             marketType = 'spot';
             spot = true;
         } else if (currencyPairType === 'FUTURE') {
-            taker = this.safeNumber (this.options['tradingFeesByPairType'], quote, this.fees['trading']['taker']);
+            taker = this.safeNumber (this.options['tradingFeesByPairType'], 'PERP', this.fees['trading']['taker']);
             marketType = 'swap';
             spot = false;
             swap = true;

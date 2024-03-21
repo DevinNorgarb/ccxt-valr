@@ -241,8 +241,9 @@ export default class valr extends Exchange {
                     'ZAR': 'ZAR',
                     'USD': 'USD',
                 },
-                'tradingFeesByQuoteCurrency': {
+                'tradingFeesByPairType': {
                     'ZAR': 0.001,
+                    'PERP': 0.0005,
                 },
             },
         });
@@ -447,10 +448,12 @@ export default class valr extends Exchange {
         let contractSize = undefined;
         let settle = undefined;
         let settleId = undefined;
+        let taker = this.safeNumber (this.options['tradingFeesByPairType'], quote, this.fees['trading']['taker']);
         if (currencyPairType === 'SPOT') {
             marketType = 'spot';
             spot = true;
         } else if (currencyPairType === 'FUTURE') {
+            taker = this.safeNumber (this.options['tradingFeesByPairType'], quote, this.fees['trading']['taker']);
             marketType = 'swap';
             spot = false;
             swap = true;
@@ -487,7 +490,7 @@ export default class valr extends Exchange {
             'settleId': settleId,
             // Setting defaults based on exchange not on response
             // These values are actually from private API call and can be overwriten with loadTradingFees
-            'taker': this.safeNumber (this.options['tradingFeesByQuoteCurrency'], quote, this.fees['trading']['taker']),
+            'taker': taker,
             'maker': this.parseNumber (this.fees['trading']['maker']),
             'precision': {
                 'price': this.precisionFromString (this.safeString (market, 'tickSize')),

@@ -577,7 +577,7 @@ export default class valr extends Exchange {
     parseTicker (ticker: object, market: Market = undefined): Ticker {
         const timestamp = this.parse8601 (this.safeString (ticker, 'created'));
         const result = {
-            'symbol': this.safeSymbol (this.safeString (ticker, 'currencyPair')),
+            'symbol': this.safeSymbol (this.safeString2 (ticker, 'currencyPair', 'currencyPairSymbol')),
             'info': ticker,
             'timestamp': timestamp,
             'datetime': this.iso8601 (timestamp),
@@ -587,9 +587,11 @@ export default class valr extends Exchange {
             'ask': this.safeString (ticker, 'askPrice'),
             'close': this.safeString (ticker, ''),
             'last': this.safeString (ticker, 'lastTradedPrice'),
+            'open': this.safeString (ticker, 'previousClosePrice'),
             'previousClose': this.safeString (ticker, 'previousClosePrice'),
             'average': this.safeString (ticker, 'markPrice'),
             'change': undefined,
+            'percentage': this.safeString (ticker, 'changeFromPrevious'),
             'baseVolume': this.safeString (ticker, 'baseVolume'),
             'quoteVolume': this.safeString (ticker, 'quoteVolume'),
         };

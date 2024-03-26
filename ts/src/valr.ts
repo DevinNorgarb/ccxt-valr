@@ -17,7 +17,6 @@ import type {
     Currency,
     Transaction,
     Account,
-    Str,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -73,7 +72,7 @@ export default class valr extends Exchange {
                 'fetchOrder': true,
                 'fetchOrderBook': true,
                 'fetchOrderBooks': false,
-                'fetchOrders': true,
+                'fetchOrders': false,
                 'fetchPermissions': true,
                 'fetchStatus': true,
                 'fetchTicker': true,
@@ -1211,10 +1210,10 @@ export default class valr extends Exchange {
             const tradeFee = response[i];
             const symbol = this.safeSymbol (this.safeString (tradeFee, 'currencyPair'));
             if (('makerPercentage' in tradeFee) && ('takerPercentage' in tradeFee)) {
-                let makerStr: Str = this.safeString (tradeFee, 'makerPercentage');
-                let takerStr: Str = this.safeString (tradeFee, 'takerPercentage');
-                makerStr = Precise.stringDiv (makerStr, 100);
-                takerStr = Precise.stringDiv (takerStr, 100);
+                let makerStr = this.safeString (tradeFee, 'makerPercentage');
+                let takerStr = this.safeString (tradeFee, 'takerPercentage');
+                makerStr = (makerStr) ? Precise.stringDiv (makerStr, '100') : undefined;
+                takerStr = (takerStr) ? Precise.stringDiv (takerStr, '100') : undefined;
                 result[symbol] = {
                     'maker': this.parseNumber (makerStr),
                     'taker': this.parseNumber (takerStr),

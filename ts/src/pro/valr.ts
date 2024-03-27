@@ -51,7 +51,7 @@ export default class valr extends valrRest {
     }
 
     async watchTicker (symbol: string, params = {}): Promise<Ticker> {
-        this.checkRequiredSymbolAugument ('watchTicker', symbol);
+        this.checkRequiredSymbolArgument ('watchTicker', symbol);
         const tickers = await this.watchTickers ([ symbol ]);
         return this.safeValue (tickers, symbol);
     }
@@ -129,7 +129,7 @@ export default class valr extends valrRest {
         await this.loadMarkets ();
         const url = this.urls['api']['ws']['account'];
         const messageHashes = [
-            'NEW_ACCOUNT_HISTORY_RECORD',
+            // 'NEW_ACCOUNT_HISTORY_RECORD',
             'BALANCE_UPDATE',
             // 'NEW_ACCOUNT_TRADE',
             // 'INSTANT_ORDER_COMPLETED',
@@ -143,14 +143,12 @@ export default class valr extends valrRest {
             // 'SEND_STATUS_UPDATE',
         ];
         this.authenticate (url);
-        const balances = await this.watchMultiple (url, messageHashes);
-        return balances as Balances;
+        const balances: Balances = await this.watchMultiple (url, messageHashes);
+        return balances;
     }
 
     handleBalance (client: Client, message) {
         const data = this.safeValue (message, 'data');
-        const updateType = this.safeString (message, 'type');
-        const balance = this.parseWsBalance (data);
         // {
         //     "type": "BALANCE_UPDATE",
         //     "data":
@@ -178,18 +176,20 @@ export default class valr extends valrRest {
         //         "referenceCurrency": "USDC"
         //     }
         // }
-        this.balance = this.extend (balance, this.balance);
+        const balance = this.parseWsBalance (data);
+        this.balance = this.deepExtend (this.balance, balance);
+        const updateType = this.safeString (message, 'type');
         client.resolve (balance, updateType);
     }
 
-    parseWsBalance (balanceWs) {
-        const currency = this.safeValue (balanceWs, 'currency');
-        const code = this.safeCurrencyCode (this.safeString (currency, 'shortName'));
+    parseWsBalance (balanceWs): Balances {
         const result = {
-            'timestamp': this.parse8601 (this.safeString (currency, 'updateAt')),
-            'datetime': this.safeString (currency, 'updateAt'),
+            'timestamp': this.parse8601 (this.safeString (balanceWs, 'updatedAt')),
+            'datetime': this.safeString (balanceWs, 'updatedAt'),
             'info': balanceWs,
         };
+        const currency = this.safeValue (balanceWs, 'currency');
+        const code = this.safeCurrencyCode (this.safeString (currency, 'shortName'));
         const debt = Precise.stringAdd (
             this.safeString (balanceWs, 'lendReserved'),
             this.safeString (balanceWs, 'borrowReserved')
@@ -247,11 +247,13 @@ export default class valr extends valrRest {
             }
             method.call (this, client, message);
         } else {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Unknown message.', message);
+            if (this.verbose) {
+                this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Unknown message.', message);
+            }
         }
     }
 
-    authenticate (url) {
+    authenticate (url: string): Client {
         if ((this.clients !== undefined) && (url in this.clients)) {
             return this.client (url);
         }

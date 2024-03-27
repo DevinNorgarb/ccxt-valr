@@ -22,7 +22,7 @@ export default class valr extends valrRest {
                 'watchTrades': false,
                 'watchTradesForSymbols': false,
                 'watchOrderBookForSymbols': false,
-                'watchBalance': false,
+                'watchBalance': true,
                 'watchOHLCV': false,
                 'watchOHLCVForSymbols': false,
                 'watchOrders': false,
@@ -217,7 +217,7 @@ export default class valr extends valrRest {
             }
             method.call (this, client, message);
         } else {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Default action.', message);
+            this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Unknown message.', message);
         }
     }
 

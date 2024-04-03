@@ -2,9 +2,9 @@
 
 import valrRest from '../valr.js';
 import { ArgumentsRequired } from '../base/errors.js';
-import { } from '../base/ws/Cache.js';
+import { ArrayCacheBySymbolById } from '../base/ws/Cache.js';
 import { sha512 } from '../static_dependencies/noble-hashes/sha512.js';
-import type { Balances, Ticker, Tickers } from '../base/types.js';
+import type { Balances, Int, Order, Str, Ticker, Tickers, Trade } from '../base/types.js';
 import Client from '../base/ws/Client.js';
 import { } from '../base/ws/OrderBook.js';
 import Precise from '../base/Precise.js';
@@ -25,14 +25,9 @@ export default class valr extends valrRest {
                 'watchBalance': true,
                 'watchOHLCV': false,
                 'watchOHLCVForSymbols': false,
-                'watchOrders': false,
-                'watchMyTrades': false,
+                'watchOrders': true,
+                'watchMyTrades': true,
                 'watchPositions': false,
-                'createOrderWs': false,
-                'editOrderWs': false,
-                'cancelOrderWs': false,
-                'cancelOrdersWs': false,
-                'cancelAllOrdersWs': false,
             },
             'urls': {
                 'api': {
@@ -128,22 +123,9 @@ export default class valr extends valrRest {
     async watchBalance (params = {}): Promise<Balances> {
         await this.loadMarkets ();
         const url = this.urls['api']['ws']['account'];
-        const messageHashes = [
-            // 'NEW_ACCOUNT_HISTORY_RECORD',
-            'BALANCE_UPDATE',
-            // 'NEW_ACCOUNT_TRADE',
-            // 'INSTANT_ORDER_COMPLETED',
-            // 'OPEN_ORDERS_UPDATE',
-            // 'OPEN_ORDERS_UPDATE',
-            // 'MODIFY_ORDER_OUTCOME',
-            // 'ORDER_PROCESSED',
-            // 'ORDER_STATUS_UPDATE',
-            // 'FAILED_CANCEL_ORDER',
-            // 'NEW_PENDING_RECEIVE',
-            // 'SEND_STATUS_UPDATE',
-        ];
+        const messageHash = 'BALANCE_UPDATE';
         this.authenticate (url);
-        const balances: Balances = await this.watchMultiple (url, messageHashes);
+        const balances = await this.watch (url, messageHash) as Balances;
         return balances;
     }
 
@@ -176,13 +158,22 @@ export default class valr extends valrRest {
         //         "referenceCurrency": "USDC"
         //     }
         // }
-        const balance = this.parseWsBalance (data);
-        this.balance = this.deepExtend (this.balance, balance);
+        const [ code, balance ] = this.parseWsBalance (data);
+        if (this.balance === undefined) {
+            this.balance = {};
+        }
+        this.balance['info'] = this.safeValue (balance, 'info');
+        this.balance['datetime'] = this.safeString (balance, 'datetime');
+        this.balance['timestamp'] = this.safeString (balance, 'timestamp');
+        if (code !== undefined) {
+            this.balance[code] = this.safeDict (balance, code);
+            this.balance = this.safeBalance (this.balance);
+        }
         const updateType = this.safeString (message, 'type');
         client.resolve (balance, updateType);
     }
 
-    parseWsBalance (balanceWs): Balances {
+    parseWsBalance (balanceWs): any {
         const result = {
             'timestamp': this.parse8601 (this.safeString (balanceWs, 'updatedAt')),
             'datetime': this.safeString (balanceWs, 'updatedAt'),
@@ -194,13 +185,338 @@ export default class valr extends valrRest {
             this.safeString (balanceWs, 'lendReserved'),
             this.safeString (balanceWs, 'borrowReserved')
         );
-        result[code] = {
-            'free': this.safeFloat (balanceWs, 'available'),
-            'used': this.safeFloat (balanceWs, 'reserved'),
-            'total': this.safeFloat (balanceWs, 'total'),
-            'debt': debt,
-        };
-        return this.safeBalance (result);
+        if (code !== undefined) {
+            result[code] = {
+                'free': this.safeFloat (balanceWs, 'available'),
+                'used': this.safeFloat (balanceWs, 'reserved'),
+                'total': this.safeFloat (balanceWs, 'total'),
+                'debt': debt,
+            };
+        }
+        return [ code, result ];
+    }
+
+    async watchMyTrades (symbol: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        await this.loadMarkets ();
+        const url = this.urls['api']['ws']['account'];
+        let messageHash = 'NEW_ACCOUNT_TRADE';
+        if (symbol) {
+            messageHash = messageHash + ':' + symbol;
+        }
+        this.authenticate (url);
+        const trades = await this.watch (url, messageHash) as ArrayCacheBySymbolById;
+        if (this.newUpdates) {
+            limit = trades.getLimit (symbol, limit);
+        }
+        return this.filterBySymbolSinceLimit (trades, symbol, since, limit, true);
+    }
+
+    handleMyTrades (client: Client, message) {
+        // {
+        //     "type": "NEW_ACCOUNT_TRADE",
+        //     "currencyPairSymbol": "BTCZAR",
+        //     "data": {
+        //       "price": "9500",
+        //       "quantity": "0.00105263",
+        //       "currencyPair": "BTCZAR",
+        //       "tradedAt": "2019-04-25T20:36:53.426Z",
+        //       "side": "buy",
+        //       "orderId":"d5a81b99-fabf-4be1-bc7c-1a00d476089d",
+        //       "id":"7a2b5560-5a71-4640-9e4b-d659ed26278a"
+        //     }
+        //   }
+        const marketId = this.safeString (message, 'currencyPairSymbol');
+        const symbol = this.safeSymbol (marketId);
+        const tradeMessage = this.safeDict (message, 'data');
+        const timestamp = this.parse8601 (this.safeString (tradeMessage, 'tradedAt'));
+        const myTrade = this.safeTrade ({
+            'info': tradeMessage,
+            'timestamp': timestamp,
+            'datetime': this.safeString (tradeMessage, 'tradedAt'),
+            'id': this.safeString (tradeMessage, 'id'),
+            'order': this.safeString (tradeMessage, 'orderId'),
+            'symbol': symbol,
+            'side': this.safeString (tradeMessage, 'side'),
+            'amount': this.safeNumber (tradeMessage, 'quantity'),
+            'price': this.safeNumber (tradeMessage, 'price'),
+        });
+        // watch All symbols
+        let cachedTrades = this.myTrades;
+        if (cachedTrades === undefined) {
+            const limit = this.safeInteger (this.options, 'tradesLimit', 1000);
+            cachedTrades = new ArrayCacheBySymbolById (limit);
+            this.myTrades = cachedTrades;
+        }
+        const updateType = this.safeString (message, 'type');
+        const messageHashSymbol = updateType + ':' + symbol;
+        cachedTrades.append (myTrade);
+        client.resolve (cachedTrades, updateType);
+        // watch specific symbol
+        client.resolve (cachedTrades, messageHashSymbol);
+    }
+
+    async watchOrders (symbol: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
+        await this.loadMarkets ();
+        const url = this.urls['api']['ws']['account'];
+        const messageHashes = [
+            // 'INSTANT_ORDER_COMPLETED',  // New Simple Buy/Sell executed
+            // New order added to open orders
+            'OPEN_ORDERS_UPDATE',
+            'ORDER_STATUS_UPDATE',
+            // {
+            //     "type": "ORDER_STATUS_UPDATE",
+            //     "data":
+            //     {
+            //         "orderId": "0967a400-fcb3-45bd-8f4a-e2b0872f53a8",
+            //         "orderStatusType": "Cancelled",
+            //         "currencyPair": "BTCZAR",
+            //         "originalPrice": "2000000",
+            //         "remainingQuantity": "0.00001",
+            //         "originalQuantity": "0.00001",
+            //         "orderSide": "sell",
+            //         "orderType": "post-only limit",
+            //         "failedReason": "",
+            //         "orderUpdatedAt": "2024-04-01T16:01:41.456Z",
+            //         "orderCreatedAt": "2024-04-01T16:00:31.074Z",
+            //         "executedPrice": "0",
+            //         "executedQuantity": "0",
+            //         "executedFee": "0"
+            //     }
+            // }
+        ];
+        this.authenticate (url);
+        if (symbol) {
+            for (let i = 0; i < messageHashes.length; i++) {
+                messageHashes[i] = messageHashes[i] + ':' + symbol;
+            }
+        }
+        const orders = await this.watchMultiple (url, messageHashes);
+        if (this.newUpdates) {
+            limit = orders.getLimit (symbol, limit);
+        }
+        return this.filterBySymbolSinceLimit (orders, symbol, since, limit);
+    }
+
+    handleOrders (client: Client, message) {
+        const messageHash = this.safeString (message, 'type');
+        const data = this.safeValue (message, 'data');
+        const results = [];
+        const messageHashesSymbol = [];
+        let ordersMessage = [];
+        if (Array.isArray (data)) {
+            ordersMessage = this.arrayConcat (ordersMessage, data);
+        } else {
+            ordersMessage.push (data);
+        }
+        for (let i = 0; i < ordersMessage.length; i++) {
+            const orderWs = this.parseWsOrder (ordersMessage[i]);
+            results.push (orderWs);
+            const symbol = this.safeString (orderWs, 'symbol');
+            // const orderId = this.safeString (parsed, 'id');
+            if (symbol !== undefined) {
+                const messageHashSymbol = messageHash + ':' + symbol;
+                if (!this.inArray (messageHashesSymbol, messageHashesSymbol)) {
+                    messageHashesSymbol.push (messageHashSymbol);
+                }
+                if (this.orders === undefined) {
+                    const limit = this.safeInteger (this.options, 'ordersLimit', 1000);
+                    this.orders = new ArrayCacheBySymbolById (limit);
+                }
+                const cachedOrders = this.orders;
+                // const orders = this.safeValue (cachedOrders.hashmap, symbol, {});
+                // const order = this.safeValue (orders, orderId);
+                // if (order !== undefined) {
+                // Use data from existing order before updating orders
+                // }
+                cachedOrders.append (orderWs);
+            }
+        }
+        client.resolve (this.orders, messageHash);
+        for (let i = 0; i < messageHashesSymbol.length; i++) {
+            client.resolve (this.orders, messageHashesSymbol[i]);
+        }
+    }
+
+    parseWsOrder (order, market = undefined) {
+        // OPEN_ORDERS_UPDATE : New order added to open orders
+        // [
+        //     {
+        //         "orderId": "38511e49-a755-4f8f-a2b1-232bae6967dc",
+        //         "side": "sell",
+        //         "quantity": "0.1",
+        //         "price": "10000",
+        //         "currencyPair": "BTCZAR"
+        //         "createdAt": "2019-04-17T19:51:35.776Z",
+        //         "originalQuantity": "0.1",
+        //         "filledPercentage": "0.00",
+        //         "type": "post-only limit",
+        //         "status": "placed",
+        //         "updatedAt": "2019-04-17T19:51:35.776Z",
+        //         "timeInForce": "GTC",
+        //         "customerOrderId": ""
+        //     },
+        //     {
+        //         "orderId": "3f759a40-09ee-44bd-a5aa-29836bbaab1a",
+        //         "side": "sell",
+        //         "quantity": "0.04",
+        //         "price": "10000",
+        //         "currencyPair": "BTCZAR"
+        //         "createdAt": "2019-04-17T19:51:35.776Z",
+        //         "originalQuantity": "0.1",
+        //         "filledPercentage": "60.00",
+        //         "customerOrderId": "3"
+        //         "type": "post-only limit",
+        //         "status": "placed",
+        //         "updatedAt": "2019-04-17T19:51:35.776Z",
+        //         "timeInForce": "GTC",
+        //     },
+        // ]
+        // OPEN_ORDERS_UPDATE : Open order modified
+        // [
+        //     {
+        //         "orderId":"6eaf85b7-7e69-4e26-9664-33a8f23bfb4f",
+        //         "side":"buy",
+        //         "quantity":"0.0002",
+        //         "price":"29300",
+        //         "currencyPair":"BTCUSDC",
+        //         "createdAt":"2023-10-24T13:33:43.503Z",
+        //         "originalQuantity":"0.0002",
+        //         "filledPercentage":"0.00",
+        //         "customerOrderId":"MyLimit1234",
+        //         "type":"limit",
+        //         "status":"Order Modified",
+        //         "updatedAt":"2023-10-24T13:36:42.660Z",
+        //         "timeInForce":"GTC"
+        //     },
+        // ]
+        // ORDER_STATUS_UPDATE : Order status has been updated
+        // {
+        //     "orderId": "9135e74e-bd4f-4aec-ba1f-d38897826cda",
+        //     "orderStatusType": "Cancelled",
+        //     "currencyPair": "BTCZAR",
+        //     "originalPrice": "2100000",
+        //     "remainingQuantity": "0.00002",
+        //     "originalQuantity": "0.00002",
+        //     "orderSide": "sell",
+        //     "orderType": "post-only limit",
+        //     "failedReason": "None",
+        //     "orderUpdatedAt": "2024-04-01T16:14:00.963Z",
+        //     "orderCreatedAt": "2024-04-01T16:01:55.985Z",
+        //     "executedPrice": "0",
+        //     "executedQuantity": "0",
+        //     "executedFee": "0"
+        // }
+        // {
+        //     "orderId": "bf17d427-f9e8-44ef-82c1-4ed94c5f4f7f",
+        //     "orderStatusType": "Filled",
+        //     "currencyPair": "BTCZAR",
+        //     "originalPrice": "1335001",
+        //     "remainingQuantity": "0",
+        //     "originalQuantity": "0.00001",
+        //     "orderSide": "sell",
+        //     "orderType": "post-only limit",
+        //     "failedReason": "",
+        //     "orderUpdatedAt": "2024-04-01T16:14:54.716Z",
+        //     "orderCreatedAt": "2024-04-01T16:13:53.400Z",
+        //     "executedPrice": "1335001",
+        //     "executedQuantity": "0.00001",
+        //     "executedFee": "0"
+        // }
+        const orderStatus = this.safeString2 (order, 'status', 'orderStatusType');
+        let status = undefined;
+        if (orderStatus === 'Placed' || orderStatus === 'Order Modified') {
+            status = 'open';
+        } else if (orderStatus === 'Cancelled' || orderStatus === 'Failed') {
+            status = 'canceled';
+        } else if (orderStatus === 'Filled') {
+            status = 'closed';
+        }
+        const orderTypeReceived = this.safeString (order, 'type');
+        let typeOrder = undefined;
+        let postOnly = undefined;
+        if (orderTypeReceived !== undefined) {
+            if (this.inArray ('limit', orderTypeReceived)) {
+                typeOrder = 'limit';
+                if (this.inArray ('post-only', orderTypeReceived)) {
+                    postOnly = true;
+                } else {
+                    postOnly = false;
+                }
+            }
+        }
+        const filledPercentage = this.safeString (order, 'filledPercentage');
+        const remaining = this.safeString (order, 'remainingQuantity');
+        const amount = this.safeString (order, 'originalQuantity');
+        let filled = undefined;
+        if (remaining === undefined && filledPercentage !== undefined) {
+            filled = Precise.stringMul (amount, filledPercentage);
+        }
+        return this.safeOrder ({
+            'timestamp': this.parse8601 (this.safeString2 (order, 'createdAt', 'orderCreatedAt')),
+            'datetime': this.safeString2 (order, 'createdAt', 'orderCreatedAt'),
+            'id': this.safeString (order, 'orderId'),
+            'clientOrderId': this.safeString (order, 'customerOrderId'),
+            'symbol': this.safeSymbol (this.safeString (order, 'currencyPair')),
+            'status': status,
+            'type': typeOrder,
+            'side': this.safeString2 (order, 'side', 'orderSide'),
+            'price': this.safeString2 (order, 'price', 'originalPrice'),
+            'amount': amount,
+            'average': this.safeString (order, 'averagePrice'),
+            'filled': filled,
+            'remaining': remaining,
+            'lastUpdateTimestamp': this.parse8601 (this.safeString2 (order, 'updatedAt', 'orderUpdatedAt')),
+            'timeInForce': this.safeString (order, 'timeInForce'),
+            'postOnly': postOnly,
+            'info': order,
+        });
+    }
+
+    async watchTransactions (code: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}) {
+        await this.loadMarkets ();
+        const url = this.urls['api']['ws']['account'];
+        const messageHashes = [
+            'ORDER_PROCESSED',
+            // {
+            //     "type": "ORDER_PROCESSED",
+            //     "data": {
+            //       "orderId": "247dc157-bb5b-49af-b476-2f613b780697",
+            //       "success": true,
+            //       "failureReason": ""
+            //     }
+            // }
+            'MODIFY_ORDER_OUTCOME', // Order modified
+            // {
+            //     "type": "MODIFY_ORDER_OUTCOME",
+            //     "data": {
+            //       "success":true,
+            //       "orderId":"6eaf85b7-7e69-4e26-9664-33a8f23bfb4f",
+            //       "customerOrderId":"MyLimit1234",
+            //       "modifyRequestId":"e0632f4e-7dab-11ee-95c0-07ba663465ab"
+            //     }
+            // }
+            'FAILED_CANCEL_ORDER',
+            // {
+            //     "type": "FAILED_CANCEL_ORDER",
+            //     "data": {
+            //         "orderId": "247dc157-bb5b-49af-b476-2f613b780697",
+            //         "message": "An error occurred while cancelling your order."
+            //     }
+            // }
+        ];
+        this.authenticate (url);
+        const result = await this.watchMultiple (url, messageHashes);
+        return result;
+    }
+
+    handleTransaction (client: Client, message) {
+        const messageHash = this.safeString (message, 'type');
+        const results = [];
+        results.push (message);
+        client.resolve (results, messageHash);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleTransaction', results);
+        }
     }
 
     ping (client: Client) {
@@ -218,7 +534,7 @@ export default class valr extends valrRest {
 
     handleMessage (client: Client, message) {
         if (message === '') {
-            this.log (this.iso8601 (this.microseconds ()), 'Empty Message');
+            this.log (this.iso8601 (this.milliseconds ()), 'Empty Message');
             return;
         }
         const methods = {
@@ -236,6 +552,12 @@ export default class valr extends valrRest {
             // {"type":"MARK_PRICE_UPDATE","currencyPairSymbol":"BTCZAR","data":{"price":"1360201"}}
             'PONG': this.handlePong,
             'BALANCE_UPDATE': this.handleBalance,
+            'NEW_ACCOUNT_TRADE': this.handleMyTrades,
+            'OPEN_ORDERS_UPDATE': this.handleOrders,
+            'ORDER_STATUS_UPDATE': this.handleOrders,
+            'ORDER_PROCESSED': this.handleTransaction,
+            'MODIFY_ORDER_OUTCOME': this.handleTransaction,
+            'FAILED_CANCEL_ORDER': this.handleTransaction,
         };
         const eventType = this.safeString (message, 'type');
         const method = this.safeValue (methods, eventType);
@@ -243,7 +565,7 @@ export default class valr extends valrRest {
         // const messageHash = Object.values (client.messageHash)
         if (method) {
             if (client.verbose) {
-                this.log (this.iso8601 (this.milliseconds ()), 'handleMessage method:', method, 'eventType: ', eventType);
+                this.log (this.iso8601 (this.milliseconds ()), 'handleMessage', 'eventType:', eventType, 'method:', method);
             }
             method.call (this, client, message);
         } else {

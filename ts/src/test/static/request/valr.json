@@ -1,0 +1,15 @@
+{
+    "exchange": "valr",
+    "skipKeys": [],
+    "outputType": "json",
+    "methods": {
+        "fetchBalance": [
+            {
+                "description": "Fetch spot Balance",
+                "method": "fetchBalance",
+                "url": "https://api.valr.com/v1/account/balances",
+                "input": []
+            }
+        ]
+    }
+}

@@ -17,6 +17,8 @@ import type {
     Currency,
     Transaction,
     Account,
+    Currencies,
+    TradingFees,
 } from './base/types.js';
 import { Precise } from './base/Precise.js';
 import { sha512 } from './static_dependencies/noble-hashes/sha512.js';
@@ -311,7 +313,7 @@ export default class valr extends Exchange {
         };
     }
 
-    async fetchCurrencies (params = {}) {
+    async fetchCurrencies (params = {}): Promise<Currencies> {
         /**
          * @method
          * @name valr#fetchCurrencies
@@ -1191,7 +1193,7 @@ export default class valr extends Exchange {
         });
     }
 
-    async fetchTradingFees (params = {}) {
+    async fetchTradingFees (params = {}): Promise<TradingFees> {
         /**
          * @method
          * @name valr#fetchTradingFees
@@ -1219,6 +1221,8 @@ export default class valr extends Exchange {
                     'taker': this.parseNumber (takerStr),
                     'info': tradeFee,
                     'symbol': symbol,
+                    'percentage': true,
+                    'tierBased': false,
                 };
             } else {
                 // Trading pair only avialble on VALR simple buy/sell platform and not trading platform.

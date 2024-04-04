@@ -1128,15 +1128,6 @@ class okx extends Exchange {
         return $this->safe_string($exchangeTypes, $type, $type);
     }
 
-    public function convert_expire_date($date) {
-        // parse YYMMDD to timestamp
-        $year = mb_substr($date, 0, 2 - 0);
-        $month = mb_substr($date, 2, 4 - 2);
-        $day = mb_substr($date, 4, 6 - 4);
-        $reconstructedDate = '20' . $year . '-' . $month . '-' . $day . 'T00:00:00Z';
-        return $reconstructedDate;
-    }
-
     public function create_expired_option_market(string $symbol) {
         // support expired option contracts
         $quote = 'USD';
@@ -1574,7 +1565,7 @@ class okx extends Exchange {
         return $this->safe_string($networksById, $networkId, $networkId);
     }
 
-    public function fetch_currencies($params = array ()) {
+    public function fetch_currencies($params = array ()): PromiseInterface {
         return Async\async(function () use ($params) {
             /**
              * fetches all available currencies on an exchange
@@ -1872,7 +1863,7 @@ class okx extends Exchange {
             //     }
             //
             $data = $this->safe_value($response, 'data', array());
-            $first = $this->safe_value($data, 0, array());
+            $first = $this->safe_dict($data, 0, array());
             return $this->parse_ticker($first, $market);
         }) ();
     }
@@ -2100,7 +2091,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_trades($data, $market, $since, $limit);
         }) ();
     }
@@ -2230,7 +2221,7 @@ class okx extends Exchange {
             //         ]
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_ohlcvs($data, $market, $timeframe, $since, $limit);
         }) ();
     }
@@ -2360,7 +2351,7 @@ class okx extends Exchange {
         return $this->safe_balance($result);
     }
 
-    public function parse_trading_fee($fee, ?array $market = null) {
+    public function parse_trading_fee($fee, ?array $market = null): array {
         // https://www.okx.com/docs-v5/en/#rest-api-account-get-$fee-rates
         //
         //     {
@@ -2380,10 +2371,12 @@ class okx extends Exchange {
             // OKX returns the fees values opposed to other exchanges, so the sign needs to be flipped
             'maker' => $this->parse_number(Precise::string_neg($this->safe_string_2($fee, 'maker', 'makerU'))),
             'taker' => $this->parse_number(Precise::string_neg($this->safe_string_2($fee, 'taker', 'takerU'))),
+            'percentage' => null,
+            'tierBased' => null,
         );
     }
 
-    public function fetch_trading_fee(string $symbol, $params = array ()) {
+    public function fetch_trading_fee(string $symbol, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $params) {
             /**
              * fetch the trading fees for a $market
@@ -2950,7 +2943,7 @@ class okx extends Exchange {
             //     "msg" => "",
             //     "outTime" => "1697979038586493"
             // }
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_orders($data);
         }) ();
     }
@@ -3156,7 +3149,7 @@ class okx extends Exchange {
             $response = Async\await($this->privatePostTradeCancelOrder (array_merge($request, $query)));
             // array("code":"0","data":[array("clOrdId":"","ordId":"317251910906576896","sCode":"0","sMsg":"")],"msg":"")
             $data = $this->safe_value($response, 'data', array());
-            $order = $this->safe_value($data, 0);
+            $order = $this->safe_dict($data, 0);
             return $this->parse_order($order, $market);
         }) ();
     }
@@ -3270,7 +3263,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $ordersData = $this->safe_value($response, 'data', array());
+            $ordersData = $this->safe_list($response, 'data', array());
             return $this->parse_orders($ordersData, $market, null, null, $params);
         }) ();
     }
@@ -3640,7 +3633,7 @@ class okx extends Exchange {
             //     }
             //
             $data = $this->safe_value($response, 'data', array());
-            $order = $this->safe_value($data, 0);
+            $order = $this->safe_dict($data, 0);
             return $this->parse_order($order, $market);
         }) ();
     }
@@ -3803,7 +3796,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_orders($data, $market, $since, $limit);
         }) ();
     }
@@ -3988,7 +3981,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_orders($data, $market, $since, $limit);
         }) ();
     }
@@ -4174,7 +4167,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_orders($data, $market, $since, $limit);
         }) ();
     }
@@ -4247,7 +4240,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_trades($data, $market, $since, $limit, $query);
         }) ();
     }
@@ -4736,7 +4729,7 @@ class okx extends Exchange {
             //     }
             //
             $data = $this->safe_value($response, 'data', array());
-            $transaction = $this->safe_value($data, 0);
+            $transaction = $this->safe_dict($data, 0);
             return $this->parse_transaction($transaction, $currency);
         }) ();
     }
@@ -4818,7 +4811,7 @@ class okx extends Exchange {
             //         )
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_transactions($data, $currency, $since, $limit, $params);
         }) ();
     }
@@ -4844,7 +4837,7 @@ class okx extends Exchange {
             }
             $response = Async\await($this->privateGetAssetDepositHistory (array_merge($request, $params)));
             $data = $this->safe_value($response, 'data');
-            $deposit = $this->safe_value($data, 0, array());
+            $deposit = $this->safe_dict($data, 0, array());
             return $this->parse_transaction($deposit, $currency);
         }) ();
     }
@@ -4918,7 +4911,7 @@ class okx extends Exchange {
             //         )
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_transactions($data, $currency, $since, $limit, $params);
         }) ();
     }
@@ -4965,7 +4958,7 @@ class okx extends Exchange {
             //    }
             //
             $data = $this->safe_value($response, 'data');
-            $withdrawal = $this->safe_value($data, 0, array());
+            $withdrawal = $this->safe_dict($data, 0, array());
             return $this->parse_transaction($withdrawal);
         }) ();
     }
@@ -5592,7 +5585,7 @@ class okx extends Exchange {
             //     }
             //
             $data = $this->safe_value($response, 'data', array());
-            $rawTransfer = $this->safe_value($data, 0, array());
+            $rawTransfer = $this->safe_dict($data, 0, array());
             return $this->parse_transfer($rawTransfer, $currency);
         }) ();
     }
@@ -5711,7 +5704,7 @@ class okx extends Exchange {
             //     }
             //
             $data = $this->safe_value($response, 'data', array());
-            $transfer = $this->safe_value($data, 0);
+            $transfer = $this->safe_dict($data, 0);
             return $this->parse_transfer($transfer);
         }) ();
     }
@@ -5775,7 +5768,7 @@ class okx extends Exchange {
             //        "msg" => ""
             //    }
             //
-            $transfers = $this->safe_value($response, 'data', array());
+            $transfers = $this->safe_list($response, 'data', array());
             return $this->parse_transfers($transfers, $currency, $since, $limit, $params);
         }) ();
     }
@@ -6449,7 +6442,7 @@ class okx extends Exchange {
         }) ();
     }
 
-    public function modify_margin_helper(string $symbol, $amount, $type, $params = array ()) {
+    public function modify_margin_helper(string $symbol, $amount, $type, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $amount, $type, $params) {
             Async\await($this->load_markets());
             $market = $this->market($symbol);
@@ -6476,32 +6469,46 @@ class okx extends Exchange {
             //       "msg" => ""
             //     }
             //
-            return $this->parse_margin_modification($response, $market);
+            $data = $this->safe_list($response, 'data', array());
+            $errorCode = $this->safe_string($response, 'code');
+            $item = $this->safe_dict($data, 0, array());
+            return array_merge($this->parse_margin_modification($item, $market), array(
+                'status' => ($errorCode === '0') ? 'ok' : 'failed',
+            ));
         }) ();
     }
 
-    public function parse_margin_modification($data, ?array $market = null) {
-        $innerData = $this->safe_value($data, 'data', array());
-        $entry = $this->safe_value($innerData, 0, array());
-        $errorCode = $this->safe_string($data, 'code');
-        $status = ($errorCode === '0') ? 'ok' : 'failed';
-        $amountRaw = $this->safe_number($entry, 'amt');
-        $typeRaw = $this->safe_string($entry, 'type');
+    public function parse_margin_modification($data, ?array $market = null): array {
+        //
+        // addMargin/reduceMargin
+        //
+        //    {
+        //        "amt" => "0.01",
+        //        "instId" => "ETH-USD-SWAP",
+        //        "posSide" => "net",
+        //        "type" => "reduce"
+        //    }
+        //
+        $amountRaw = $this->safe_number($data, 'amt');
+        $typeRaw = $this->safe_string($data, 'type');
         $type = ($typeRaw === 'reduce') ? 'reduce' : 'add';
-        $marketId = $this->safe_string($entry, 'instId');
+        $marketId = $this->safe_string($data, 'instId');
         $responseMarket = $this->safe_market($marketId, $market);
         $code = $responseMarket['inverse'] ? $responseMarket['base'] : $responseMarket['quote'];
         return array(
             'info' => $data,
+            'symbol' => $responseMarket['symbol'],
             'type' => $type,
             'amount' => $amountRaw,
+            'total' => null,
             'code' => $code,
-            'symbol' => $responseMarket['symbol'],
-            'status' => $status,
+            'status' => null,
+            'timestamp' => null,
+            'datetime' => null,
         );
     }
 
-    public function reduce_margin(string $symbol, $amount, $params = array ()) {
+    public function reduce_margin(string $symbol, $amount, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $amount, $params) {
             /**
              * remove margin from a position
@@ -6515,7 +6522,7 @@ class okx extends Exchange {
         }) ();
     }
 
-    public function add_margin(string $symbol, $amount, $params = array ()) {
+    public function add_margin(string $symbol, $amount, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $amount, $params) {
             /**
              * add margin
@@ -6857,7 +6864,7 @@ class okx extends Exchange {
             //         "msg" => ""
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_open_interest($data[0], $market);
         }) ();
     }
@@ -6927,7 +6934,7 @@ class okx extends Exchange {
             //        "msg" => ''
             //    }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_open_interests($data, null, $since, $limit);
         }) ();
     }
@@ -7050,7 +7057,7 @@ class okx extends Exchange {
             //        "msg" => ""
             //    }
             //
-            $data = $this->safe_value($response, 'data');
+            $data = $this->safe_list($response, 'data');
             return $this->parse_deposit_withdraw_fees($data, $codes);
         }) ();
     }
@@ -7432,7 +7439,7 @@ class okx extends Exchange {
             //    }
             //
             $data = $this->safe_value($response, 'data');
-            $order = $this->safe_value($data, 0);
+            $order = $this->safe_dict($data, 0);
             return $this->parse_order($order, $market);
         }) ();
     }

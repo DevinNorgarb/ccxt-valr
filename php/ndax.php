@@ -325,7 +325,7 @@ class ndax extends Exchange {
         return $response;
     }
 
-    public function fetch_currencies($params = array ()) {
+    public function fetch_currencies($params = array ()): array {
         /**
          * fetches all available currencies on an exchange
          * @see https://apidoc.ndax.io/#getproduct
@@ -1919,7 +1919,7 @@ class ndax extends Exchange {
         //     )
         //
         $grouped = $this->group_by($response, 'ChangeReason');
-        $trades = $this->safe_value($grouped, 'Trade', array());
+        $trades = $this->safe_list($grouped, 'Trade', array());
         return $this->parse_trades($trades, $market, $since, $limit);
     }
 

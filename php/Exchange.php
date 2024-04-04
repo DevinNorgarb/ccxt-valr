@@ -38,7 +38,7 @@ use Elliptic\EdDSA;
 use BN\BN;
 use Exception;
 
-$version = '4.2.84';
+$version = '4.2.89';
 
 // rounding mode
 const TRUNCATE = 0;
@@ -57,7 +57,7 @@ const PAD_WITH_ZERO = 6;
 
 class Exchange {
 
-    const VERSION = '4.2.84';
+    const VERSION = '4.2.89';
 
     private static $base58_alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
     private static $base58_encoder = null;
@@ -275,8 +275,6 @@ class Exchange {
         'fetchDepositAddresses' => null,
         'fetchDepositAddressesByNetwork' => null,
         'fetchDeposits' => null,
-        'fetchFundingFee' => null,
-        'fetchFundingFees' => null,
         'fetchFundingHistory' => null,
         'fetchFundingRate' => null,
         'fetchFundingRateHistory' => null,
@@ -4622,11 +4620,11 @@ class Exchange {
         if ($currencyId !== null) {
             $code = $this->common_currency_code(strtoupper($currencyId));
         }
-        return array(
+        return $this->safe_currency_structure(array(
             'id' => $currencyId,
             'code' => $code,
             'precision' => null,
-        );
+        ));
     }
 
     public function safe_market(?string $marketId, ?array $market = null, ?string $delimiter = null, ?string $marketType = null) {
@@ -4739,22 +4737,6 @@ class Exchange {
 
     public function fetch_status($params = array ()) {
         throw new NotSupported($this->id . ' fetchStatus() is not supported yet');
-    }
-
-    public function fetch_funding_fee(string $code, $params = array ()) {
-        $warnOnFetchFundingFee = $this->safe_bool($this->options, 'warnOnFetchFundingFee', true);
-        if ($warnOnFetchFundingFee) {
-            throw new NotSupported($this->id . ' fetchFundingFee() method is deprecated, it will be removed in July 2022, please, use fetchTransactionFee() or set exchange.options["warnOnFetchFundingFee"] = false to suppress this warning');
-        }
-        return $this->fetch_transaction_fee($code, $params);
-    }
-
-    public function fetch_funding_fees(?array $codes = null, $params = array ()) {
-        $warnOnFetchFundingFees = $this->safe_bool($this->options, 'warnOnFetchFundingFees', true);
-        if ($warnOnFetchFundingFees) {
-            throw new NotSupported($this->id . ' fetchFundingFees() method is deprecated, it will be removed in July 2022. Please, use fetchTransactionFees() or set exchange.options["warnOnFetchFundingFees"] = false to suppress this warning');
-        }
-        return $this->fetch_transaction_fees($codes, $params);
     }
 
     public function fetch_transaction_fee(string $code, $params = array ()) {
@@ -5460,11 +5442,18 @@ class Exchange {
         );
     }
 
-    public function common_currency_code(string $currency) {
+    public function common_currency_code(string $code) {
         if (!$this->substituteCommonCurrencyCodes) {
-            return $currency;
+            return $code;
         }
-        return $this->safe_string($this->commonCurrencies, $currency, $currency);
+        // if the provided $code already $exists value in $commonCurrencies dict, then we should not again transform it
+        // more details at => https://github.com/ccxt/ccxt/issues/21112#issuecomment-2031293691
+        $commonCurrencies = is_array($this->commonCurrencies) ? array_values($this->commonCurrencies) : array();
+        $exists = $this->in_array($code, $commonCurrencies);
+        if ($exists) {
+            return $code;
+        }
+        return $this->safe_string($this->commonCurrencies, $code, $code);
     }
 
     public function currency(string $code) {
@@ -5635,6 +5624,29 @@ class Exchange {
             $parsedPrecision = $parsedPrecision . '0';
         }
         return $parsedPrecision . '1';
+    }
+
+    public function integer_precision_to_amount(?string $precision) {
+        /**
+         * @ignore
+         * handles positive & negative numbers too. parsePrecision() does not handle negative numbers, but this method handles
+         * @param {string} $precision The number of digits to the right of the decimal
+         * @return {string} a string number equal to 1e-$precision
+         */
+        if ($precision === null) {
+            return null;
+        }
+        if (Precise::string_ge($precision, '0')) {
+            return $this->parse_precision($precision);
+        } else {
+            $positivePrecisionString = Precise::string_abs($precision);
+            $positivePrecision = intval($positivePrecisionString);
+            $parsedPrecision = '1';
+            for ($i = 0; $i < $positivePrecision - 1; $i++) {
+                $parsedPrecision = $parsedPrecision . '0';
+            }
+            return $parsedPrecision . '0';
+        }
     }
 
     public function load_time_difference($params = array ()) {
@@ -5937,7 +5949,8 @@ class Exchange {
         if (!$this->has['fetchTradingFees']) {
             throw new NotSupported($this->id . ' fetchTradingFee() is not supported yet');
         }
-        return $this->fetch_trading_fees($params);
+        $fees = $this->fetch_trading_fees($params);
+        return $this->safe_dict($fees, $symbol);
     }
 
     public function parse_open_interest($interest, ?array $market = null) {
@@ -6125,8 +6138,8 @@ class Exchange {
             $entry = $responseKeys[$i];
             $dictionary = $isArray ? $entry : $response[$entry];
             $currencyId = $isArray ? $this->safe_string($dictionary, $currencyIdKey) : $entry;
-            $currency = $this->safe_value($this->currencies_by_id, $currencyId);
-            $code = $this->safe_string($currency, 'code', $currencyId);
+            $currency = $this->safe_currency($currencyId);
+            $code = $this->safe_string($currency, 'code');
             if (($codes === null) || ($this->in_array($code, $codes))) {
                 $depositWithdrawFees[$code] = $this->parseDepositWithdrawFee ($dictionary, $currency);
             }
@@ -6644,5 +6657,73 @@ class Exchange {
 
     public function parse_leverage($leverage, ?array $market = null) {
         throw new NotSupported($this->id . ' parseLeverage() is not supported yet');
+    }
+
+    public function convert_expire_date(string $date) {
+        // parse YYMMDD to datetime string
+        $year = mb_substr($date, 0, 2 - 0);
+        $month = mb_substr($date, 2, 4 - 2);
+        $day = mb_substr($date, 4, 6 - 4);
+        $reconstructedDate = '20' . $year . '-' . $month . '-' . $day . 'T00:00:00Z';
+        return $reconstructedDate;
+    }
+
+    public function convert_expire_date_to_market_id_date(string $date) {
+        // parse 240119 to 19JAN24
+        $year = mb_substr($date, 0, 2 - 0);
+        $monthRaw = mb_substr($date, 2, 4 - 2);
+        $month = null;
+        $day = mb_substr($date, 4, 6 - 4);
+        if ($monthRaw === '01') {
+            $month = 'JAN';
+        } elseif ($monthRaw === '02') {
+            $month = 'FEB';
+        } elseif ($monthRaw === '03') {
+            $month = 'MAR';
+        } elseif ($monthRaw === '04') {
+            $month = 'APR';
+        } elseif ($monthRaw === '05') {
+            $month = 'MAY';
+        } elseif ($monthRaw === '06') {
+            $month = 'JUN';
+        } elseif ($monthRaw === '07') {
+            $month = 'JUL';
+        } elseif ($monthRaw === '08') {
+            $month = 'AUG';
+        } elseif ($monthRaw === '09') {
+            $month = 'SEP';
+        } elseif ($monthRaw === '10') {
+            $month = 'OCT';
+        } elseif ($monthRaw === '11') {
+            $month = 'NOV';
+        } elseif ($monthRaw === '12') {
+            $month = 'DEC';
+        }
+        $reconstructedDate = $day . $month . $year;
+        return $reconstructedDate;
+    }
+
+    public function convert_market_id_expire_date(string $date) {
+        // parse 19JAN24 to 240119
+        $monthMappping = array(
+            'JAN' => '01',
+            'FEB' => '02',
+            'MAR' => '03',
+            'APR' => '04',
+            'MAY' => '05',
+            'JUN' => '06',
+            'JUL' => '07',
+            'AUG' => '08',
+            'SEP' => '09',
+            'OCT' => '10',
+            'NOV' => '11',
+            'DEC' => '12',
+        );
+        $year = mb_substr($date, 0, 2 - 0);
+        $monthName = mb_substr($date, 2, 5 - 2);
+        $month = $this->safe_string($monthMappping, $monthName);
+        $day = mb_substr($date, 5, 7 - 5);
+        $reconstructedDate = $day . $month . $year;
+        return $reconstructedDate;
     }
 }

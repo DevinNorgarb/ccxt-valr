@@ -7,7 +7,7 @@ import { AuthenticationError, ExchangeError, ArgumentsRequired, PermissionDenied
 import { Precise } from './base/Precise.js';
 import { sha256 } from './static_dependencies/noble-hashes/sha256.js';
 import { rsa } from './base/functions/rsa.js';
-import type { Int, OrderSide, OrderType, Trade, Order, OHLCV, FundingRateHistory, OpenInterest, OrderRequest, Balances, Str, Transaction, Ticker, OrderBook, Tickers, Greeks, Strings, Market, Currency, MarketInterface, TransferEntry, Liquidation, Leverage, Num, FundingHistory, Option, OptionChain } from './base/types.js';
+import type { Int, OrderSide, OrderType, Trade, Order, OHLCV, FundingRateHistory, OpenInterest, OrderRequest, Balances, Str, Transaction, Ticker, OrderBook, Tickers, Greeks, Strings, Market, Currency, MarketInterface, TransferEntry, Liquidation, Leverage, Num, FundingHistory, Option, OptionChain, TradingFeeInterface, Currencies, TradingFees } from './base/types.js';
 
 //  ---------------------------------------------------------------------------
 
@@ -1237,7 +1237,7 @@ export default class bybit extends Exchange {
         return this.safeInteger (response, 'time');
     }
 
-    async fetchCurrencies (params = {}) {
+    async fetchCurrencies (params = {}): Promise<Currencies> {
         /**
          * @method
          * @name bybit#fetchCurrencies
@@ -2021,7 +2021,7 @@ export default class bybit extends Exchange {
         //
         const result = this.safeValue (response, 'result', []);
         const tickers = this.safeValue (result, 'list', []);
-        const rawTicker = this.safeValue (tickers, 0);
+        const rawTicker = this.safeDict (tickers, 0);
         return this.parseTicker (rawTicker, market);
     }
 
@@ -2124,7 +2124,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const result = this.safeValue (response, 'result', {});
-        const tickerList = this.safeValue (result, 'list', []);
+        const tickerList = this.safeList (result, 'list', []);
         return this.parseTickers (tickerList, parsedSymbols);
     }
 
@@ -2259,7 +2259,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const result = this.safeValue (response, 'result', {});
-        const ohlcvs = this.safeValue (result, 'list', []);
+        const ohlcvs = this.safeList (result, 'list', []);
         return this.parseOHLCVs (ohlcvs, market, timeframe, since, limit);
     }
 
@@ -2733,7 +2733,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const result = this.safeValue (response, 'result', {});
-        const trades = this.safeValue (result, 'list', []);
+        const trades = this.safeList (result, 'list', []);
         return this.parseTrades (trades, market, since, limit);
     }
 
@@ -3480,7 +3480,7 @@ export default class bybit extends Exchange {
         //         "time": 1672211918471
         //     }
         //
-        const order = this.safeValue (response, 'result', {});
+        const order = this.safeDict (response, 'result', {});
         return this.parseOrder (order, market);
     }
 
@@ -3910,7 +3910,7 @@ export default class bybit extends Exchange {
         //            "tpTriggerBy":"UNKNOWN"
         //     }
         //
-        const order = this.safeValue (response, 'result', {});
+        const order = this.safeDict (response, 'result', {});
         return this.parseOrder (order, market);
     }
 
@@ -3966,7 +3966,7 @@ export default class bybit extends Exchange {
         //        "retExtMap": {}
         //   }
         //
-        const result = this.safeValue (response, 'result', {});
+        const result = this.safeDict (response, 'result', {});
         return this.parseOrder (result, market);
     }
 
@@ -4134,7 +4134,7 @@ export default class bybit extends Exchange {
         //         "retExtMap": {}
         //     }
         //
-        const result = this.safeValue (response, 'result', {});
+        const result = this.safeDict (response, 'result', {});
         return this.parseOrder (result, market);
     }
 
@@ -4200,7 +4200,7 @@ export default class bybit extends Exchange {
         //         "time": 1672217377164
         //     }
         //
-        const result = this.safeValue (response, 'result', {});
+        const result = this.safeDict (response, 'result', {});
         return this.parseOrder (result, market);
     }
 
@@ -4498,7 +4498,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const result = this.safeValue (response, 'result', {});
-        const data = this.safeValue (result, 'dataList', []);
+        const data = this.safeList (result, 'dataList', []);
         return this.parseOrders (data, market, since, limit);
     }
 
@@ -5137,7 +5137,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const result = this.safeValue (response, 'result', {});
-        const dataList = this.safeValue (result, 'dataList', []);
+        const dataList = this.safeList (result, 'dataList', []);
         return this.parseTrades (dataList, market, since, limit);
     }
 
@@ -5344,7 +5344,7 @@ export default class bybit extends Exchange {
         const chains = this.safeValue (result, 'chains', []);
         const chainsIndexedById = this.indexBy (chains, 'chain');
         const selectedNetworkId = this.selectNetworkIdFromRawNetworks (code, networkCode, chainsIndexedById);
-        const addressObject = this.safeValue (chainsIndexedById, selectedNetworkId, {});
+        const addressObject = this.safeDict (chainsIndexedById, selectedNetworkId, {});
         return this.parseDepositAddress (addressObject, currency);
     }
 
@@ -5909,7 +5909,7 @@ export default class bybit extends Exchange {
         //         "time": "1666892894902"
         //     }
         //
-        const result = this.safeValue (response, 'result', {});
+        const result = this.safeDict (response, 'result', {});
         return this.parseTransaction (result, currency);
     }
 
@@ -6315,6 +6315,12 @@ export default class bybit extends Exchange {
         if (timestamp === undefined) {
             timestamp = this.safeIntegerN (position, [ 'updatedTime', 'updatedAt' ]);
         }
+        const tradeMode = this.safeInteger (position, 'tradeMode', 0);
+        let marginMode = undefined;
+        if ((!this.options['enableUnifiedAccount']) || (this.options['enableUnifiedAccount'] && market['inverse'])) {
+            // tradeMode would work for classic and UTA(inverse)
+            marginMode = (tradeMode === 1) ? 'isolated' : 'cross';
+        }
         let collateralString = this.safeString (position, 'positionBalance');
         const entryPrice = this.omitZero (this.safeString2 (position, 'entryPrice', 'avgPrice'));
         const liquidationPrice = this.omitZero (this.safeString (position, 'liqPrice'));
@@ -6376,7 +6382,7 @@ export default class bybit extends Exchange {
             'markPrice': this.safeNumber (position, 'markPrice'),
             'lastPrice': undefined,
             'collateral': this.parseNumber (collateralString),
-            'marginMode': undefined,
+            'marginMode': marginMode,
             'side': side,
             'percentage': undefined,
             'stopLossPrice': this.safeNumber2 (position, 'stop_loss', 'stopLoss'),
@@ -7233,7 +7239,7 @@ export default class bybit extends Exchange {
         return await this.fetchDerivativesMarketLeverageTiers (symbol, params);
     }
 
-    parseTradingFee (fee, market: Market = undefined) {
+    parseTradingFee (fee, market: Market = undefined): TradingFeeInterface {
         //
         //     {
         //         "symbol": "ETHUSDT",
@@ -7249,10 +7255,12 @@ export default class bybit extends Exchange {
             'symbol': symbol,
             'maker': this.safeNumber (fee, 'makerFeeRate'),
             'taker': this.safeNumber (fee, 'takerFeeRate'),
+            'percentage': undefined,
+            'tierBased': undefined,
         };
     }
 
-    async fetchTradingFee (symbol: string, params = {}) {
+    async fetchTradingFee (symbol: string, params = {}): Promise<TradingFeeInterface> {
         /**
          * @method
          * @name bybit#fetchTradingFee
@@ -7302,7 +7310,7 @@ export default class bybit extends Exchange {
         return this.parseTradingFee (first, market);
     }
 
-    async fetchTradingFees (params = {}) {
+    async fetchTradingFees (params = {}): Promise<TradingFees> {
         /**
          * @method
          * @name bybit#fetchTradingFees
@@ -7445,7 +7453,7 @@ export default class bybit extends Exchange {
         //     }
         //
         const data = this.safeValue (response, 'result', {});
-        const rows = this.safeValue (data, 'rows', []);
+        const rows = this.safeList (data, 'rows', []);
         return this.parseDepositWithdrawFees (rows, codes, 'coin');
     }
 

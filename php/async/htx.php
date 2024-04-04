@@ -1489,7 +1489,7 @@ class htx extends Exchange {
         }) ();
     }
 
-    public function parse_trading_fee($fee, ?array $market = null) {
+    public function parse_trading_fee($fee, ?array $market = null): array {
         //
         //     {
         //         "symbol":"btcusdt",
@@ -1505,10 +1505,12 @@ class htx extends Exchange {
             'symbol' => $this->safe_symbol($marketId, $market),
             'maker' => $this->safe_number($fee, 'actualMakerRate'),
             'taker' => $this->safe_number($fee, 'actualTakerRate'),
+            'percentage' => null,
+            'tierBased' => null,
         );
     }
 
-    public function fetch_trading_fee(string $symbol, $params = array ()) {
+    public function fetch_trading_fee(string $symbol, $params = array ()): PromiseInterface {
         return Async\async(function () use ($symbol, $params) {
             /**
              * fetch the trading fees for a $market
@@ -2361,7 +2363,7 @@ class htx extends Exchange {
                 throw new NotSupported($this->id . ' fetchLastPrices() does not support ' . $type . ' markets yet');
             }
             $tick = $this->safe_value($response, 'tick', array());
-            $data = $this->safe_value($tick, 'data', array());
+            $data = $this->safe_list($tick, 'data', array());
             return $this->parse_last_prices($data, $symbols);
         }) ();
     }
@@ -2958,7 +2960,7 @@ class htx extends Exchange {
             $untilSeconds = ($until !== null) ? $this->parse_to_int($until / 1000) : null;
             if ($market['contract']) {
                 if ($limit !== null) {
-                    $request['size'] = $limit; // when using $limit => from & to are ignored
+                    $request['size'] = min ($limit, 2000); // when using $limit => from & to are ignored
                     // https://huobiapi.github.io/docs/usdt_swap/v1/en/#general-get-kline-$data
                 } else {
                     $limit = 2000; // only used for from/to calculation
@@ -3032,7 +3034,7 @@ class htx extends Exchange {
                 list($useHistorical, $params) = $this->handle_option_and_params($params, 'fetchOHLCV', 'useHistoricalEndpointForSpot', true);
                 if (!$useHistorical) {
                     if ($limit !== null) {
-                        $request['size'] = min (2000, $limit); // max 2000
+                        $request['size'] = min ($limit, 2000); // max 2000
                     }
                     $response = Async\await($this->spotPublicGetMarketHistoryKline (array_merge($request, $params)));
                 } else {
@@ -3142,7 +3144,7 @@ class htx extends Exchange {
         }) ();
     }
 
-    public function fetch_currencies($params = array ()) {
+    public function fetch_currencies($params = array ()): PromiseInterface {
         return Async\async(function () use ($params) {
             /**
              * fetches all available currencies on an exchange
@@ -3923,7 +3925,7 @@ class htx extends Exchange {
             //         )
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_orders($data, $market, $since, $limit);
         }) ();
     }
@@ -7210,7 +7212,7 @@ class htx extends Exchange {
                 $request['symbol'] = $market['id'];
                 $response = Async\await($this->contractPrivatePostApiV3ContractFinancialRecordExact (array_merge($request, $query)));
             }
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_incomes($data, $market, $since, $limit);
         }) ();
     }
@@ -7983,7 +7985,7 @@ class htx extends Exchange {
             //        )
             //    }
             //
-            $data = $this->safe_value($response, 'data');
+            $data = $this->safe_list($response, 'data');
             return $this->parse_leverage_tiers($data, $symbols, 'contract_code');
         }) ();
     }
@@ -8188,7 +8190,7 @@ class htx extends Exchange {
             //    }
             //
             $data = $this->safe_value($response, 'data');
-            $tick = $this->safe_value($data, 'tick');
+            $tick = $this->safe_list($data, 'tick');
             return $this->parse_open_interests($tick, $market, $since, $limit);
         }) ();
     }
@@ -8700,7 +8702,7 @@ class htx extends Exchange {
             //        )
             //    }
             //
-            $data = $this->safe_value($response, 'data');
+            $data = $this->safe_list($response, 'data');
             return $this->parse_deposit_withdraw_fees($data, $codes, 'currency');
         }) ();
     }
@@ -8927,7 +8929,7 @@ class htx extends Exchange {
             //         "ts" => 1604312615051
             //     }
             //
-            $data = $this->safe_value($response, 'data', array());
+            $data = $this->safe_list($response, 'data', array());
             return $this->parse_liquidations($data, $market, $since, $limit);
         }) ();
     }

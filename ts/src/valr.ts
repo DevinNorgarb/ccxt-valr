@@ -250,9 +250,12 @@ export default class valr extends Exchange {
         });
     }
 
-    checkRequiredSymbolAugument (methodName: string, symbol: string) {
+    checkRequiredSymbolArgument (methodName: string, symbol: string) {
         if (symbol === undefined) {
             throw new ArgumentsRequired (this.id + ' ' + methodName + '() requires valid symbol name');
+        }
+        if (typeof symbol !== 'string') {
+            throw new ArgumentsRequired (this.id + ' ' + methodName + '() requires valid string name for symbol');
         }
         const market = this.safeMarket (symbol);
         if (market === undefined) {
@@ -260,7 +263,7 @@ export default class valr extends Exchange {
         }
     }
 
-    checkRequiredCurrencyCodeAugument (methodName: string, code: string) {
+    checkRequiredCurrencyCodeArgument (methodName: string, code: string) {
         if (code === undefined) {
             throw new ArgumentsRequired (this.id + ' ' + methodName + '() requires valid currency code name');
         }
@@ -566,7 +569,7 @@ export default class valr extends Exchange {
          * @returns {object} a [Ticker Structure]{@link https://docs.ccxt.com/#/?id=ticker-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredSymbolAugument (this.id + ' fetchTicker', symbol);
+        this.checkRequiredSymbolArgument (this.id + ' fetchTicker', symbol);
         const marketId = this.marketId (symbol);
         const request = {
             'pair': marketId,
@@ -612,7 +615,7 @@ export default class valr extends Exchange {
          */
         await this.loadMarkets ();
         let response = undefined;
-        this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
+        this.checkRequiredSymbolArgument ('fetchOrderBook', symbol);
         params['pair'] = this.marketId (symbol);
         if (this.checkRequiredCredentials (false)) {
             response = await this.privateGetMarketdataPairOrderbook (params);
@@ -637,7 +640,7 @@ export default class valr extends Exchange {
          */
         await this.loadMarkets ();
         let response = undefined;
-        this.checkRequiredSymbolAugument ('fetchOrderBook', symbol);
+        this.checkRequiredSymbolArgument ('fetchOrderBook', symbol);
         params['pair'] = this.marketId (symbol);
         if (this.checkRequiredCredentials (false)) {
             response = await this.privateGetMarketdataPairOrderbookFull (params);
@@ -779,7 +782,7 @@ export default class valr extends Exchange {
          * @returns {object} An [order structure]{@link https://docs.ccxt.com/#/?id=order-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredSymbolAugument ('fetchOrder', symbol);
+        this.checkRequiredSymbolArgument ('fetchOrder', symbol);
         const marketId = this.marketId (symbol);
         const request = {
             'id': id,
@@ -943,7 +946,7 @@ export default class valr extends Exchange {
          */
         await this.loadMarkets ();
         let response = undefined;
-        this.checkRequiredSymbolAugument ('createOrder', symbol);
+        this.checkRequiredSymbolArgument ('createOrder', symbol);
         const marketId = this.marketId (symbol);
         if (side !== 'buy' && side !== 'sell') {
             throw new InvalidOrder (this.id + ' createOrder() - "side" must be either "buy" or "sell".');
@@ -1008,7 +1011,7 @@ export default class valr extends Exchange {
          * @returns {object} an [order structure]{@link https://docs.ccxt.com/#/?id=order-structure} with only the id and symbol added
          */
         await this.loadMarkets ();
-        this.checkRequiredSymbolAugument ('cancelOrder', symbol);
+        this.checkRequiredSymbolArgument ('cancelOrder', symbol);
         const marketId = this.marketId (symbol);
         const orderFormat = {
             'orderId': id,
@@ -1033,7 +1036,7 @@ export default class valr extends Exchange {
         if (symbol === undefined) {
             response = this.privateDeleteOrders (params);
         } else {
-            this.checkRequiredSymbolAugument ('cancelAllOrders', symbol);
+            this.checkRequiredSymbolArgument ('cancelAllOrders', symbol);
             const marketId = this.marketId (symbol);
             const body = {
                 'pair': marketId,
@@ -1061,7 +1064,7 @@ export default class valr extends Exchange {
          */
         await this.loadMarkets ();
         let response = undefined;
-        this.checkRequiredSymbolAugument ('fetchTrades', symbol);
+        this.checkRequiredSymbolArgument ('fetchTrades', symbol);
         params['pair'] = this.marketId (symbol);
         if (this.checkRequiredCredentials (false)) {
             response = await this.privateGetMarketdataPairTradehistory (params);
@@ -1129,7 +1132,7 @@ export default class valr extends Exchange {
          * @returns {Trade[]} a list of [trade structures]{@link https://docs.ccxt.com/#/?id=trade-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredSymbolAugument ('fetchMyTrades', symbol);
+        this.checkRequiredSymbolArgument ('fetchMyTrades', symbol);
         params['pair'] = this.marketId (symbol);
         const response = await this.privateGetAccountPairTradehistory (params);
         // [
@@ -1260,7 +1263,7 @@ export default class valr extends Exchange {
          * @returns {object} an [address structure]{@link https://docs.ccxt.com/#/?id=address-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredCurrencyCodeAugument ('fetchDepositAddress', code);
+        this.checkRequiredCurrencyCodeArgument ('fetchDepositAddress', code);
         let response = undefined;
         const currency = this.safeCurrency (code);
         const currencyId = {
@@ -1302,7 +1305,7 @@ export default class valr extends Exchange {
          * @returns {object[]} a list of [transaction structures]{@link https://docs.ccxt.com/#/?id=transaction-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredCurrencyCodeAugument ('fetchDeposits', code);
+        this.checkRequiredCurrencyCodeArgument ('fetchDeposits', code);
         if (this.isFiat (code)) {
             throw new NotSupported (this.id + ' fetchDeposits() is not supported yet for fiat currencies');
         }
@@ -1352,7 +1355,7 @@ export default class valr extends Exchange {
          * @returns {object} a list of [transaction structure]{@link https://docs.ccxt.com/#/?id=transaction-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
+        this.checkRequiredCurrencyCodeArgument ('fetchWithdrawals', code);
         if (this.isFiat (code)) {
             throw new NotSupported (this.id + ' fetchWithdrawals() is not supported yet for fiat currencies');
         }
@@ -1421,7 +1424,7 @@ export default class valr extends Exchange {
          * @returns {object} a [transaction structure]{@link https://docs.ccxt.com/#/?id=transaction-structure}
          */
         await this.loadMarkets ();
-        this.checkRequiredCurrencyCodeAugument ('fetchWithdrawals', code);
+        this.checkRequiredCurrencyCodeArgument ('fetchWithdrawals', code);
         const currency = this.safeCurrency (code);
         // todo: Include 'networkType' from default currency if none provided via params
         let response = undefined;

@@ -2,9 +2,9 @@
 
 import valrRest from '../valr.js';
 import { ArgumentsRequired } from '../base/errors.js';
-import { ArrayCacheBySymbolById } from '../base/ws/Cache.js';
+import { ArrayCache, ArrayCacheBySymbolById, ArrayCacheByTimestamp } from '../base/ws/Cache.js';
 import { sha512 } from '../static_dependencies/noble-hashes/sha512.js';
-import type { Balances, Int, Order, Str, Ticker, Tickers, Trade } from '../base/types.js';
+import type { Balances, Int, OHLCV, Order, OrderBook, Str, Ticker, Tickers, Trade } from '../base/types.js';
 import Client from '../base/ws/Client.js';
 import { } from '../base/ws/OrderBook.js';
 import Precise from '../base/Precise.js';
@@ -18,16 +18,25 @@ export default class valr extends valrRest {
                 'ws': true,
                 'watchTicker': true,
                 'watchTickers': true,
-                'watchOrderBook': false,
-                'watchTrades': false,
-                'watchTradesForSymbols': false,
-                'watchOrderBookForSymbols': false,
+                'watchOrderBook': true,
+                'watchOrderBookForSymbols': true,
+                'watchTrades': true,
+                'watchTradesForSymbols': true,
                 'watchBalance': true,
-                'watchOHLCV': false,
-                'watchOHLCVForSymbols': false,
+                'watchOHLCV': true,
+                'watchOHLCVForSymbols': true,
                 'watchOrders': true,
                 'watchMyTrades': true,
                 'watchPositions': false,
+            },
+            'timeframes': {
+                '1m': 60,
+                '5m': 300,
+                '15m': 900,
+                '30m': 1800,
+                '1h': 3600,
+                '6h': 21600,
+                '1d': 86400,
             },
             'urls': {
                 'api': {
@@ -45,9 +54,148 @@ export default class valr extends valrRest {
         });
     }
 
+    async watchOrderBook (symbol: string, limit: Int = undefined, params = {}): Promise<OrderBook> {
+        await this.loadMarkets ();
+        this.checkRequiredSymbolArgument ('watchOrderBook', symbol);
+        return await this.watchOrderBookForSymbols ([ symbol ], limit, params);
+    }
+
+    async watchOrderBookForSymbols (symbols: string[], limit: Int = undefined, params = {}): Promise<OrderBook> {
+        await this.loadMarkets ();
+        const marketIds = this.marketIds (symbols);
+        if (symbols === undefined || marketIds === undefined) {
+            throw new ArgumentsRequired (this.id + ' watchOrderBookForSymbols() requires valid symbol list');
+        }
+        const url = this.urls['api']['ws']['trade'];
+        const client = this.authenticate (url);
+        const messageHashes = [];
+        for (let i = 0; i < marketIds.length; i++) {
+            messageHashes.push ('AGGREGATED_ORDERBOOK_UPDATE:' + marketIds[i]);
+        }
+        const subscriptionHashes = Object.keys (client.subscriptions);
+        for (let i = 0; i < subscriptionHashes.length; i++) {
+            const subscriptionHash = subscriptionHashes[i];
+            if (subscriptionHash.indexOf ('AGGREGATED_ORDERBOOK_UPDATE:') >= 0) {
+                const subMarketId = this.safeString (subscriptionHash.split (':'), 1);
+                if (subMarketId && !this.inArray (subMarketId, marketIds)) {
+                    marketIds.push (subMarketId);
+                }
+            }
+        }
+        const message = {
+            'type': 'SUBSCRIBE',
+            'subscriptions': [
+                {
+                    'event': 'AGGREGATED_ORDERBOOK_UPDATE',
+                    'pairs': marketIds,
+                },
+            ],
+        };
+        const orderbook = await this.watchMultiple (url, messageHashes, message, messageHashes);
+        return orderbook.limit ();
+    }
+
+    handleOrderBook (client: Client, message) {
+        // {
+        //     "type": "AGGREGATED_ORDERBOOK_UPDATE",
+        //     "currencyPairSymbol": "PYUSDUSDT",
+        //     "LastChange": "2024-03-27T12:39:52.562Z",
+        //     "SequenceNumber": 173347
+        //     "data":
+        //     {
+        //         "Asks":
+        //         [
+        //             {
+        //                 "side": "sell",
+        //                 "quantity": "495.26",
+        //                 "price": "0.99735",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //             {
+        //                 "side": "sell",
+        //                 "quantity": "11352.38",
+        //                 "price": "0.99775",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //             {
+        //                 "side": "sell",
+        //                 "quantity": "11925.87",
+        //                 "price": "0.99825",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //         ],
+        //         "Bids":
+        //         [
+        //             {
+        //                 "side": "buy",
+        //                 "quantity": "498.38",
+        //                 "price": "0.99727",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //             {
+        //                 "side": "buy",
+        //                 "quantity": "11316.78",
+        //                 "price": "0.99687",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //             {
+        //                 "side": "buy",
+        //                 "quantity": "11964.06",
+        //                 "price": "0.99637",
+        //                 "currencyPair": "PYUSDUSDT",
+        //                 "orderCount": 1
+        //             },
+        //         ]
+        //     }
+        // }
+        const updateType = this.safeString (message, 'type');
+        const marketId = this.safeString (message, 'currencyPairSymbol');
+        const messageHash = updateType + ':' + marketId;
+        const symbol = this.safeSymbol (marketId);
+        const data = this.safeValue (message, 'data');
+        const nonce = this.safeInteger (data, 'SequenceNumber');
+        const datetime = this.safeString (data, 'LastChange');
+        const timestamp = this.parse8601 (datetime);
+        let orderbook = this.safeValue (this.orderbooks, symbol);
+        if (orderbook === undefined) {
+            orderbook = this.countedOrderBook ();
+        }
+        const snapshot = {
+            'asks': this.parseWsOrderBookSide (this.safeValue (data, 'Asks')),
+            'bids': this.parseWsOrderBookSide (this.safeValue (data, 'Bids')),
+            'symbol': symbol,
+            'timestamp': timestamp,
+            'datetime': datetime,
+            'nonce': nonce,
+        };
+        orderbook.update (snapshot);
+        this.orderbooks[symbol] = orderbook;
+        client.resolve (orderbook, messageHash);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleOrderBook', orderbook.limit ());
+        }
+    }
+
+    parseWsOrderBookSide (side) {
+        const result = [];
+        for (let i = 0; i < side.length; i++) {
+            result.push ([
+                this.safeNumber (side[i], 'price'),
+                this.safeNumber (side[i], 'quantity'),
+                this.safeNumber (side[i], 'orderCount'),
+            ]);
+        }
+        return result;
+    }
+
     async watchTicker (symbol: string, params = {}): Promise<Ticker> {
         this.checkRequiredSymbolArgument ('watchTicker', symbol);
-        const tickers = await this.watchTickers ([ symbol ]);
+        const tickers = await this.watchTickers ([ symbol ], params);
         return this.safeValue (tickers, symbol);
     }
 
@@ -90,10 +238,6 @@ export default class valr extends valrRest {
     }
 
     handleTicker (client: Client, message) {
-        const updateType = this.safeString (message, 'type');
-        const currencyPair = this.safeString (message, 'currencyPairSymbol');
-        const messageHash = updateType + ':' + currencyPair;
-        const tickerWs = this.safeValue (message, 'data');
         // {
         //     "type": "MARKET_SUMMARY_UPDATE",
         //     "currencyPairSymbol": "BTCZAR",
@@ -113,11 +257,240 @@ export default class valr extends valrRest {
         //         "markPrice": "1291638"
         //     }
         // }
+        const updateType = this.safeString (message, 'type');
         const marketId = this.safeString (message, 'currencyPairSymbol');
         const symbol = this.symbol (marketId);
+        const messageHash = updateType + ':' + marketId;
+        const tickerWs = this.safeValue (message, 'data');
         const ticker = this.parseTicker (tickerWs);
         this.tickers[symbol] = ticker;
         client.resolve (ticker, messageHash);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleTicker', ticker);
+        }
+    }
+
+    async watchTrades (symbol: string, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        this.checkRequiredSymbolArgument ('watchTrades', symbol);
+        return await this.watchTradesForSymbols ([ symbol ], since, limit, params);
+    }
+
+    async watchTradesForSymbols (symbols: string[], since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
+        await this.loadMarkets ();
+        const marketIds = this.marketIds (symbols);
+        if (symbols === undefined || marketIds === undefined) {
+            throw new ArgumentsRequired (this.id + ' watchTradesForSymbols() requires valid symbol list');
+        }
+        const url = this.urls['api']['ws']['trade'];
+        const client = this.authenticate (url);
+        const messageHashes = [];
+        for (let i = 0; i < marketIds.length; i++) {
+            messageHashes.push ('NEW_TRADE:' + marketIds[i]);
+        }
+        const subscriptionHashes = Object.keys (client.subscriptions);
+        for (let i = 0; i < subscriptionHashes.length; i++) {
+            const subscriptionHash = subscriptionHashes[i];
+            if (subscriptionHash.indexOf ('NEW_TRADE:') >= 0) {
+                const subMarketId = this.safeString (subscriptionHash.split (':'), 1);
+                if (subMarketId && !this.inArray (subMarketId, marketIds)) {
+                    marketIds.push (subMarketId);
+                }
+            }
+        }
+        const message = {
+            'type': 'SUBSCRIBE',
+            'subscriptions': [
+                {
+                    'event': 'NEW_TRADE',
+                    'pairs': marketIds,
+                },
+            ],
+        };
+        const trades = await this.watchMultiple (url, messageHashes, message, messageHashes);
+        if (this.newUpdates) {
+            const first = this.safeValue (trades, 0);
+            const tradeSymbol = this.safeString (first, 'symbol');
+            limit = trades.getLimit (tradeSymbol, limit);
+        }
+        return this.filterBySinceLimit (trades, since, limit, 'timestamp', true);
+    }
+
+    handleTrades (client: Client, message) {
+        // {
+        //     "type": "NEW_TRADE",
+        //     "currencyPairSymbol": "BTCZAR",
+        //     "data":
+        //     {
+        //         "price": "1360468",
+        //         "quantity": "0.0004402",
+        //         "currencyPair": "BTCZAR",
+        //         "tradedAt": "2024-03-27T12:33:19.918Z",
+        //         "takerSide": "buy",
+        //         "id": "31934cc3-ec36-11ee-92bb-8f9d774e71b6"
+        //     }
+        // }
+        const updateType = this.safeString (message, 'type');
+        const marketId = this.safeString (message, 'currencyPairSymbol');
+        const messageHash = updateType + ':' + marketId;
+        const symbol = this.safeSymbol (marketId);
+        const data = this.safeValue (message, 'data');
+        const parsed = {
+            'timestamp': this.parse8601 (this.safeString (data, 'tradedAt')),
+            'datetime': this.safeString (data, 'tradedAt'),
+            'id': this.safeString (data, 'id'),
+            'order': undefined,
+            'type': undefined,
+            'takerOrMaker': undefined,
+            'symbol': symbol,
+            'price': this.safeString (data, 'price'),
+            'amount': this.safeString (data, 'quantity'),
+            'side': this.safeString (data, 'takerSide'),
+            'info': data,
+            'fee': undefined,
+        };
+        const trade = this.safeTrade (parsed);
+        let stored = this.safeValue (this.trades, symbol);
+        if (stored === undefined) {
+            const limit = this.safeInteger (this.options, 'tradesLimit', 1000);
+            stored = new ArrayCache (limit);
+            this.trades[symbol] = stored;
+        }
+        stored.append (trade);
+        client.resolve (stored, messageHash);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleTrades', trade);
+        }
+    }
+
+    async watchOHLCV (symbol: string, timeframe = '1m', since: Int = undefined, limit: Int = undefined, params = {}): Promise<OHLCV[]> {
+        await this.loadMarkets ();
+        this.checkRequiredSymbolArgument ('watchOHLCV', symbol);
+        const symbolAndTimeframe = [ symbol, timeframe ];
+        const symbolsAndTimeframes = [ symbolAndTimeframe ];
+        const candles = await this.watchOHLCVForSymbols (symbolsAndTimeframes, since, limit, params);
+        const candlesSymbol = this.safeValue (candles, symbol);
+        return this.safeValue (candlesSymbol, timeframe);
+    }
+
+    async watchOHLCVForSymbols (symbolsAndTimeframes: string[][], since: Int = undefined, limit: Int = undefined, params = {}) {
+        await this.loadMarkets ();
+        const symbolsLength = symbolsAndTimeframes.length;
+        if (symbolsLength === 0 || !Array.isArray (symbolsAndTimeframes[0])) {
+            throw new ArgumentsRequired (this.id + ' watchOHLCVForSymbols() requires a an array of symbols and timeframes, like  [["BTC/USDT", "1m"], ["LTC/USDT", "5m"]]');
+        }
+        const marketIds = [];
+        const symbols = [];
+        const messageHashes = [];
+        for (let i = 0; i < symbolsAndTimeframes.length; i++) {
+            const symbolAndTimeframe = symbolsAndTimeframes[i];
+            const timeframe = symbolAndTimeframe[1];
+            if ((timeframe === undefined) || !(timeframe in this.timeframes)) {
+                throw new ArgumentsRequired (this.id + ' watchOHLCVForSymbols() requires supported timeframe option');
+            }
+            const symbol = symbolAndTimeframe[0];
+            const marketId = this.marketId (symbol);
+            this.checkRequiredSymbolArgument ('watchOHLCVForSymbols', symbol);
+            messageHashes.push ('NEW_TRADE_BUCKET_' + timeframe + ':' + marketId);
+            if (!this.inArray (symbol, symbols)) {
+                symbols.push (symbol);
+                marketIds.push (marketId);
+            }
+        }
+        if (marketIds === undefined) {
+            throw new ArgumentsRequired (this.id + ' watchTradesForSymbols() requires valid symbol list');
+        }
+        const url = this.urls['api']['ws']['trade'];
+        const client = this.authenticate (url);
+        const subscriptionHashes = Object.keys (client.subscriptions);
+        for (let i = 0; i < subscriptionHashes.length; i++) {
+            const subscriptionHash = subscriptionHashes[i];
+            if (subscriptionHash.indexOf ('NEW_TRADE_BUCKET') >= 0) {
+                const subMarketId = this.safeString (subscriptionHash.split (':'), 1);
+                if (subMarketId && !this.inArray (subMarketId, marketIds)) {
+                    marketIds.push (subMarketId);
+                }
+            }
+        }
+        const message = {
+            'type': 'SUBSCRIBE',
+            'subscriptions': [
+                {
+                    'event': 'NEW_TRADE_BUCKET',
+                    'pairs': marketIds,
+                },
+            ],
+        };
+        // call to watchMultiple only gets one of the multiple symbolsAndTimeframes returned as they all arrive
+        // at the same time. The rest are stored in seperate caches.
+        const [ symbolWs, timeframeWs, candles ] = await this.watchMultiple (url, messageHashes, message, messageHashes);
+        // const symbolTimeframeCandles = {};
+        if (this.newUpdates) {
+            // for (let i = 0; i < symbols.length; i++) {
+            //     const symbolReq = symbols[i];
+            //     const candleSymbol = this.safeDict (this.ohlcvs, symbolReq);
+            //     if (candleSymbol !== undefined) {
+            //         const candleStored = this.safeValue (candleSymbol, timeframeWs);
+            //         if (candleStored !== undefined) {
+            //             const limitReg = candles.getLimit (symbolWs, limit);
+            //             const filtered = this.filterBySinceLimit (candles, since, limit, 0, true);
+            //             symbolTimeframeCandles[symbolReq] = {};
+            //             symbolTimeframeCandles[symbolReq][timeframeWs] = filtered;
+            //         }
+            //     }
+            // }
+            limit = candles.getLimit (symbolWs, limit);
+        }
+        const filtered = this.filterBySinceLimit (candles, since, limit, 0, true);
+        return this.createOHLCVObject (symbolWs, timeframeWs, filtered);
+    }
+
+    handleOHLCV (client: Client, message) {
+        // Only support timeframe of 1m
+        // {
+        //     type: 'NEW_TRADE_BUCKET',
+        //     currencyPairSymbol: 'BTCUSDC',
+        //     data: {
+        //       currencyPairSymbol: 'BTCUSDC',
+        //       bucketPeriodInSeconds: 60,
+        //       startTime: '2024-04-05T09:03:00Z',
+        //       open: '67310',
+        //       high: '67310',
+        //       low: '67310',
+        //       close: '67310',
+        //       volume: '0',
+        //       quoteVolume: '0'
+        //     }
+        // }
+        const updateType = this.safeString (message, 'type');
+        const marketId = this.safeString (message, 'currencyPairSymbol');
+        const symbol = this.safeSymbol (marketId);
+        const data = this.safeValue (message, 'data');
+        const period = this.safeInteger (data, 'bucketPeriodInSeconds');
+        const timeframe = this.findTimeframe (period);
+        const parsed = [
+            this.parse8601 (this.safeString (data, 'startTime')),
+            this.safeNumber (data, 'open'), // open
+            this.safeNumber (data, 'high'), // high
+            this.safeNumber (data, 'low'), // low
+            this.safeNumber (data, 'close'), // close
+            this.safeNumber (data, 'volume'), // volume
+        ];
+        this.ohlcvs[symbol] = this.safeValue (this.ohlcvs, symbol, {});
+        let stored = this.safeValue (this.ohlcvs[symbol], timeframe);
+        if (stored === undefined) {
+            const limit = this.safeInteger (this.options, 'OHLCVLimit', 1000);
+            stored = new ArrayCacheByTimestamp (limit);
+            this.ohlcvs[symbol][timeframe] = stored;
+        }
+        stored.append (parsed);
+        // for multiOHLCV we need special object, as opposed to other "multi"
+        // methods, because OHLCV response item does not contain symbol
+        // or timeframe, thus otherwise it would be unrecognizable
+        const messageHash = updateType + '_' + timeframe + ':' + marketId;
+        client.resolve ([ symbol, timeframe, stored ], messageHash);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleOHLCV', symbol, timeframe, parsed);
+        }
     }
 
     async watchBalance (params = {}): Promise<Balances> {
@@ -125,7 +498,7 @@ export default class valr extends valrRest {
         const url = this.urls['api']['ws']['account'];
         const messageHash = 'BALANCE_UPDATE';
         this.authenticate (url);
-        const balances = await this.watch (url, messageHash) as Balances;
+        const balances = await this.watch (url, messageHash);
         return balances;
     }
 
@@ -171,6 +544,9 @@ export default class valr extends valrRest {
         }
         const updateType = this.safeString (message, 'type');
         client.resolve (balance, updateType);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleBalance', balance);
+        }
     }
 
     parseWsBalance (balanceWs): any {
@@ -253,6 +629,9 @@ export default class valr extends valrRest {
         client.resolve (cachedTrades, updateType);
         // watch specific symbol
         client.resolve (cachedTrades, messageHashSymbol);
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleMyTrades', myTrade);
+        }
     }
 
     async watchOrders (symbol: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
@@ -298,6 +677,9 @@ export default class valr extends valrRest {
     }
 
     handleOrders (client: Client, message) {
+        if (this.verbose) {
+            this.log (this.iso8601 (this.milliseconds ()), 'handleOrders', message);
+        }
         const messageHash = this.safeString (message, 'type');
         const data = this.safeValue (message, 'data');
         const results = [];
@@ -538,16 +920,13 @@ export default class valr extends valrRest {
             return;
         }
         const methods = {
-            'AGGREGATED_ORDERBOOK_UPDATE': this.log,
-            // {"type":"AGGREGATED_ORDERBOOK_UPDATE","currencyPairSymbol":"PYUSDUSDT","data":{"Asks":[{"side":"sell","quantity":"495.26","price":"0.99735","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"11352.38","price":"0.99775","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"11925.87","price":"0.99825","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"11896.23","price":"1.00325","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"11964.45","price":"1.00827","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"9518.68","price":"1.01332","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"sell","quantity":"2.72","price":"9699.99999","currencyPair":"PYUSDUSDT","orderCount":2}],"Bids":[{"side":"buy","quantity":"498.38","price":"0.99727","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"11316.78","price":"0.99687","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"11964.06","price":"0.99637","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"11991.24","price":"0.99138","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"11979.87","price":"0.98642","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"11915.87","price":"0.98148","currencyPair":"PYUSDUSDT","orderCount":1},{"side":"buy","quantity":"20809.99","price":"0.00159","currencyPair":"PYUSDUSDT","orderCount":1}],"LastChange":"2024-03-27T12:39:52.562Z","SequenceNumber":173347}}
+            'AGGREGATED_ORDERBOOK_UPDATE': this.handleOrderBook,
             'FULL_ORDERBOOK_UPDATE': this.log,
             // {"type":"FULL_ORDERBOOK_UPDATE","currencyPairSymbol":"PYUSDUSDT","data":{"LastChange":1711543154427,"Asks":[{"Price":"0.99732","Orders":[{"orderId":"041200ae-2849-4660-93bd-ff6b8d1ebd39","quantity":"0"}]},{"Price":"0.99766","Orders":[{"orderId":"b6c577f1-bf4d-4963-9e9e-aa87499ee93c","quantity":"0"}]},{"Price":"0.99816","Orders":[{"orderId":"3d9ed086-0079-4cda-b052-5fbbf5fd6966","quantity":"0"}]},{"Price":"1.00315","Orders":[{"orderId":"992b1ba2-0a58-404f-9710-2fa617a908fe","quantity":"0"}]},{"Price":"1.00817","Orders":[{"orderId":"f0b97400-f7ed-43f1-be48-6097e71e5a25","quantity":"0"}]},{"Price":"1.01321","Orders":[{"orderId":"82555657-3968-42e7-b4d2-b9866b2e59aa","quantity":"0"}]}],"Bids":[{"Price":"0.99726","Orders":[{"orderId":"cb1a92fa-0db4-42db-bca8-0fee32cdfc8d","quantity":"0"}]},{"Price":"0.99678","Orders":[{"orderId":"8d4a8efd-f871-40d6-8c63-576d20e7777c","quantity":"0"}]},{"Price":"0.99628","Orders":[{"orderId":"517a2a39-dfe9-4605-938b-4564313012a4","quantity":"0"}]},{"Price":"0.99129","Orders":[{"orderId":"e4851eeb-25d4-4383-891c-7361c3e1bb10","quantity":"0"}]},{"Price":"0.98633","Orders":[{"orderId":"6a45081f-37e3-4977-9e91-68a95505698f","quantity":"0"}]},{"Price":"0.98139","Orders":[{"orderId":"6837f9fb-f4fc-434a-914b-0e25e9d1585a","quantity":"0"}]}],"SequenceNumber":173335,"Checksum":492550141}}
             'MARKET_SUMMARY_UPDATE': this.handleTicker,
-            'NEW_TRADE_BUCKET': this.log,
-            // { "type": "NEW_TRADE_BUCKET", "currencyPairSymbol": "BTCZAR", "data": { "currencyPairSymbol": "BTCZAR", "bucketPeriodInSeconds": 300, "startTime": "2024-03-27T12:25:00Z", "open": "1359400", "high": "1359976", "low": "1358706", "close": "1359063", "volume": "0.05533505", "quoteVolume": "75211.39828681" } }
-            'NEW_TRADE': this.log,
-            // {"type":"NEW_TRADE","currencyPairSymbol":"BTCZAR","data":{"price":"1360468","quantity":"0.0004402","currencyPair":"BTCZAR","tradedAt":"2024-03-27T12:33:19.918Z","takerSide":"buy","id":"31934cc3-ec36-11ee-92bb-8f9d774e71b6"}}
-            'MARK_PRICE_UPDATE': this.log,
+            'NEW_TRADE_BUCKET': this.handleOHLCV,
+            'NEW_TRADE': this.handleTrades,
+            // 'MARK_PRICE_UPDATE': this.log,
             // Used for instant buy/sell orders not for exchange.
             // {"type":"MARK_PRICE_UPDATE","currencyPairSymbol":"BTCZAR","data":{"price":"1360201"}}
             'PONG': this.handlePong,

@@ -173,12 +173,13 @@ export default class valr extends valrRest {
             'datetime': datetime,
             'nonce': nonce,
         };
-        orderbook.update (snapshot);
+        // Using reset instead of update as csharp does not support update
+        orderbook.reset (snapshot);
         this.orderbooks[symbol] = orderbook;
         client.resolve (orderbook, messageHash);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleOrderBook', orderbook.limit ());
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleOrderBook', orderbook.limit ());
+        // }
     }
 
     parseWsOrderBookSide (side) {
@@ -265,9 +266,9 @@ export default class valr extends valrRest {
         const ticker = this.parseTicker (tickerWs);
         this.tickers[symbol] = ticker;
         client.resolve (ticker, messageHash);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleTicker', ticker);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleTicker', ticker);
+        // }
     }
 
     async watchTrades (symbol: string, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Trade[]> {
@@ -357,9 +358,9 @@ export default class valr extends valrRest {
         }
         stored.append (trade);
         client.resolve (stored, messageHash);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleTrades', trade);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleTrades', trade);
+        // }
     }
 
     async watchOHLCV (symbol: string, timeframe = '1m', since: Int = undefined, limit: Int = undefined, params = {}): Promise<OHLCV[]> {
@@ -488,9 +489,9 @@ export default class valr extends valrRest {
         // or timeframe, thus otherwise it would be unrecognizable
         const messageHash = updateType + '_' + timeframe + ':' + marketId;
         client.resolve ([ symbol, timeframe, stored ], messageHash);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleOHLCV', symbol, timeframe, parsed);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleOHLCV', symbol, timeframe, parsed);
+        // }
     }
 
     async watchBalance (params = {}): Promise<Balances> {
@@ -544,9 +545,9 @@ export default class valr extends valrRest {
         }
         const updateType = this.safeString (message, 'type');
         client.resolve (balance, updateType);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleBalance', balance);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleBalance', balance);
+        // }
     }
 
     parseWsBalance (balanceWs): any {
@@ -629,9 +630,9 @@ export default class valr extends valrRest {
         client.resolve (cachedTrades, updateType);
         // watch specific symbol
         client.resolve (cachedTrades, messageHashSymbol);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleMyTrades', myTrade);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleMyTrades', myTrade);
+        // }
     }
 
     async watchOrders (symbol: Str = undefined, since: Int = undefined, limit: Int = undefined, params = {}): Promise<Order[]> {
@@ -677,9 +678,9 @@ export default class valr extends valrRest {
     }
 
     handleOrders (client: Client, message) {
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleOrders', message);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleOrders', message);
+        // }
         const messageHash = this.safeString (message, 'type');
         const data = this.safeValue (message, 'data');
         const results = [];
@@ -896,9 +897,9 @@ export default class valr extends valrRest {
         const results = [];
         results.push (message);
         client.resolve (results, messageHash);
-        if (this.verbose) {
-            this.log (this.iso8601 (this.milliseconds ()), 'handleTransaction', results);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (this.milliseconds ()), 'handleTransaction', results);
+        // }
     }
 
     ping (client: Client) {
@@ -908,20 +909,20 @@ export default class valr extends valrRest {
     handlePong (client: Client, message) {
         client.lastPong = this.milliseconds ();
         // {'type': 'PONG'}
-        if (this.verbose) {
-            this.log (this.iso8601 (client.lastPong), 'handlePong', client.url, message);
-        }
+        // if (this.verbose) {
+        //     this.log (this.iso8601 (client.lastPong), 'handlePong', client.url, message);
+        // }
         return message;
     }
 
     handleMessage (client: Client, message) {
         if (message === '') {
-            this.log (this.iso8601 (this.milliseconds ()), 'Empty Message');
+            // this.log (this.iso8601 (this.milliseconds ()), 'Empty Message');
             return;
         }
         const methods = {
             'AGGREGATED_ORDERBOOK_UPDATE': this.handleOrderBook,
-            'FULL_ORDERBOOK_UPDATE': this.log,
+            // 'FULL_ORDERBOOK_UPDATE': this.log,
             // {"type":"FULL_ORDERBOOK_UPDATE","currencyPairSymbol":"PYUSDUSDT","data":{"LastChange":1711543154427,"Asks":[{"Price":"0.99732","Orders":[{"orderId":"041200ae-2849-4660-93bd-ff6b8d1ebd39","quantity":"0"}]},{"Price":"0.99766","Orders":[{"orderId":"b6c577f1-bf4d-4963-9e9e-aa87499ee93c","quantity":"0"}]},{"Price":"0.99816","Orders":[{"orderId":"3d9ed086-0079-4cda-b052-5fbbf5fd6966","quantity":"0"}]},{"Price":"1.00315","Orders":[{"orderId":"992b1ba2-0a58-404f-9710-2fa617a908fe","quantity":"0"}]},{"Price":"1.00817","Orders":[{"orderId":"f0b97400-f7ed-43f1-be48-6097e71e5a25","quantity":"0"}]},{"Price":"1.01321","Orders":[{"orderId":"82555657-3968-42e7-b4d2-b9866b2e59aa","quantity":"0"}]}],"Bids":[{"Price":"0.99726","Orders":[{"orderId":"cb1a92fa-0db4-42db-bca8-0fee32cdfc8d","quantity":"0"}]},{"Price":"0.99678","Orders":[{"orderId":"8d4a8efd-f871-40d6-8c63-576d20e7777c","quantity":"0"}]},{"Price":"0.99628","Orders":[{"orderId":"517a2a39-dfe9-4605-938b-4564313012a4","quantity":"0"}]},{"Price":"0.99129","Orders":[{"orderId":"e4851eeb-25d4-4383-891c-7361c3e1bb10","quantity":"0"}]},{"Price":"0.98633","Orders":[{"orderId":"6a45081f-37e3-4977-9e91-68a95505698f","quantity":"0"}]},{"Price":"0.98139","Orders":[{"orderId":"6837f9fb-f4fc-434a-914b-0e25e9d1585a","quantity":"0"}]}],"SequenceNumber":173335,"Checksum":492550141}}
             'MARKET_SUMMARY_UPDATE': this.handleTicker,
             'NEW_TRADE_BUCKET': this.handleOHLCV,
@@ -943,14 +944,14 @@ export default class valr extends valrRest {
         // const subscriptions = Object.values (client.subscriptions);
         // const messageHash = Object.values (client.messageHash)
         if (method) {
-            if (client.verbose) {
-                this.log (this.iso8601 (this.milliseconds ()), 'handleMessage', 'eventType:', eventType, 'method:', method);
-            }
+            // if (client.verbose) {
+            //     this.log (this.iso8601 (this.milliseconds ()), 'handleMessage', 'eventType:', eventType, 'method:', method);
+            // }
             method.call (this, client, message);
-        } else {
-            if (this.verbose) {
-                this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Unknown message.', message);
-            }
+        // } else {
+        //     if (this.verbose) {
+        //         this.log (this.iso8601 (this.milliseconds ()), 'handleMessage: Unknown message.', message);
+        //     }
         }
     }
 

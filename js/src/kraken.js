@@ -1554,9 +1554,10 @@ export default class kraken extends Exchange {
         //  }
         //
         const description = this.safeDict(order, 'descr', {});
+        const orderDescriptionObj = this.safeDict(order, 'descr'); // can be null
         let orderDescription = undefined;
-        if (description !== undefined) {
-            orderDescription = this.safeString(description, 'order');
+        if (orderDescriptionObj !== undefined) {
+            orderDescription = this.safeString(orderDescriptionObj, 'order');
         }
         else {
             orderDescription = this.safeString(order, 'descr');
@@ -1631,8 +1632,8 @@ export default class kraken extends Exchange {
         }
         const status = this.parseOrderStatus(this.safeString(order, 'status'));
         let id = this.safeString2(order, 'id', 'txid');
-        if ((id === undefined) || (id.slice(0, 1) === '[')) {
-            const txid = this.safeValue(order, 'txid');
+        if ((id === undefined) || (id.startsWith('['))) {
+            const txid = this.safeList(order, 'txid');
             id = this.safeString(txid, 0);
         }
         const clientOrderId = this.safeString(order, 'userref');
@@ -2706,15 +2707,15 @@ export default class kraken extends Exchange {
          * @name kraken#fetchPositions
          * @description fetch all open positions
          * @see https://docs.kraken.com/rest/#tag/Account-Data/operation/getOpenPositions
-         * @param {string[]|undefined} symbols not used by kraken fetchPositions ()
+         * @param {string[]} [symbols] not used by kraken fetchPositions ()
          * @param {object} [params] extra parameters specific to the exchange API endpoint
          * @returns {object[]} a list of [position structure]{@link https://docs.ccxt.com/#/?id=position-structure}
          */
         await this.loadMarkets();
         const request = {
-        // 'txid': 'comma delimited list of transaction ids to restrict output to',
-        // 'docalcs': false, // whether or not to include profit/loss calculations
-        // 'consolidation': 'market', // what to consolidate the positions data around, market will consolidate positions based on market pair
+            // 'txid': 'comma delimited list of transaction ids to restrict output to',
+            'docalcs': 'true',
+            'consolidation': 'market', // what to consolidate the positions data around, market will consolidate positions based on market pair
         };
         const response = await this.privatePostOpenPositions(this.extend(request, params));
         //
@@ -2762,9 +2763,58 @@ export default class kraken extends Exchange {
         //         ]
         //     }
         //
-        const result = this.safeValue(response, 'result');
-        // todo unify parsePosition/parsePositions
-        return result;
+        symbols = this.marketSymbols(symbols);
+        const result = this.safeList(response, 'result');
+        const results = this.parsePositions(result, symbols);
+        return this.filterByArrayPositions(results, 'symbol', symbols, false);
+    }
+    parsePosition(position, market = undefined) {
+        //
+        //             {
+        //                 "pair": "ETHUSDT",
+        //                 "positions": "1",
+        //                 "type": "buy",
+        //                 "leverage": "2.00000",
+        //                 "cost": "28.49800",
+        //                 "fee": "0.07979",
+        //                 "vol": "0.02000000",
+        //                 "vol_closed": "0.00000000",
+        //                 "margin": "14.24900"
+        //             }
+        //
+        const marketId = this.safeString(position, 'pair');
+        const rawSide = this.safeString(position, 'type');
+        const side = (rawSide === 'buy') ? 'long' : 'short';
+        return this.safePosition({
+            'info': position,
+            'id': undefined,
+            'symbol': this.safeSymbol(marketId, market),
+            'notional': undefined,
+            'marginMode': undefined,
+            'liquidationPrice': undefined,
+            'entryPrice': undefined,
+            'unrealizedPnl': this.safeNumber(position, 'net'),
+            'realizedPnl': undefined,
+            'percentage': undefined,
+            'contracts': this.safeNumber(position, 'vol'),
+            'contractSize': undefined,
+            'markPrice': undefined,
+            'lastPrice': undefined,
+            'side': side,
+            'hedged': undefined,
+            'timestamp': undefined,
+            'datetime': undefined,
+            'lastUpdateTimestamp': undefined,
+            'maintenanceMargin': undefined,
+            'maintenanceMarginPercentage': undefined,
+            'collateral': undefined,
+            'initialMargin': this.safeNumber(position, 'margin'),
+            'initialMarginPercentage': undefined,
+            'leverage': this.safeNumber(position, 'leverage'),
+            'marginRatio': undefined,
+            'stopLossPrice': undefined,
+            'takeProfitPrice': undefined,
+        });
     }
     parseAccountType(account) {
         const accountByType = {

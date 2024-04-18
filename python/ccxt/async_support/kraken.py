@@ -9,6 +9,7 @@ import hashlib
 from ccxt.base.types import Balances, Currencies, Currency, IndexType, Int, Market, Num, Order, OrderBook, OrderSide, OrderType, Str, Strings, Ticker, Tickers, Trade, TradingFeeInterface, Transaction, TransferEntry
 from typing import List
 from ccxt.base.errors import ExchangeError
+from ccxt.base.errors import AuthenticationError
 from ccxt.base.errors import PermissionDenied
 from ccxt.base.errors import AccountSuspended
 from ccxt.base.errors import ArgumentsRequired
@@ -25,7 +26,6 @@ from ccxt.base.errors import RateLimitExceeded
 from ccxt.base.errors import ExchangeNotAvailable
 from ccxt.base.errors import OnMaintenance
 from ccxt.base.errors import InvalidNonce
-from ccxt.base.errors import AuthenticationError
 from ccxt.base.decimal_to_precision import TRUNCATE
 from ccxt.base.decimal_to_precision import TICK_SIZE
 from ccxt.base.precise import Precise
@@ -1501,9 +1501,10 @@ class kraken(Exchange, ImplicitAPI):
         #  }
         #
         description = self.safe_dict(order, 'descr', {})
+        orderDescriptionObj = self.safe_dict(order, 'descr')  # can be null
         orderDescription = None
-        if description is not None:
-            orderDescription = self.safe_string(description, 'order')
+        if orderDescriptionObj is not None:
+            orderDescription = self.safe_string(orderDescriptionObj, 'order')
         else:
             orderDescription = self.safe_string(order, 'descr')
         side = None
@@ -1564,8 +1565,8 @@ class kraken(Exchange, ImplicitAPI):
                     fee['currency'] = market['base']
         status = self.parse_order_status(self.safe_string(order, 'status'))
         id = self.safe_string_2(order, 'id', 'txid')
-        if (id is None) or (id[0:1] == '['):
-            txid = self.safe_value(order, 'txid')
+        if (id is None) or (id.startswith('[')):
+            txid = self.safe_list(order, 'txid')
             id = self.safe_string(txid, 0)
         clientOrderId = self.safe_string(order, 'userref')
         rawTrades = self.safe_value(order, 'trades', [])
@@ -2529,15 +2530,15 @@ class kraken(Exchange, ImplicitAPI):
         """
         fetch all open positions
         :see: https://docs.kraken.com/rest/#tag/Account-Data/operation/getOpenPositions
-        :param str[]|None symbols: not used by kraken fetchPositions()
+        :param str[] [symbols]: not used by kraken fetchPositions()
         :param dict [params]: extra parameters specific to the exchange API endpoint
         :returns dict[]: a list of `position structure <https://docs.ccxt.com/#/?id=position-structure>`
         """
         await self.load_markets()
         request = {
             # 'txid': 'comma delimited list of transaction ids to restrict output to',
-            # 'docalcs': False,  # whether or not to include profit/loss calculations
-            # 'consolidation': 'market',  # what to consolidate the positions data around, market will consolidate positions based on market pair
+            'docalcs': 'true',  # whether or not to include profit/loss calculations
+            'consolidation': 'market',  # what to consolidate the positions data around, market will consolidate positions based on market pair
         }
         response = await self.privatePostOpenPositions(self.extend(request, params))
         #
@@ -2585,9 +2586,58 @@ class kraken(Exchange, ImplicitAPI):
         #         ]
         #     }
         #
-        result = self.safe_value(response, 'result')
-        # todo unify parsePosition/parsePositions
-        return result
+        symbols = self.market_symbols(symbols)
+        result = self.safe_list(response, 'result')
+        results = self.parse_positions(result, symbols)
+        return self.filter_by_array_positions(results, 'symbol', symbols, False)
+
+    def parse_position(self, position, market: Market = None):
+        #
+        #             {
+        #                 "pair": "ETHUSDT",
+        #                 "positions": "1",
+        #                 "type": "buy",
+        #                 "leverage": "2.00000",
+        #                 "cost": "28.49800",
+        #                 "fee": "0.07979",
+        #                 "vol": "0.02000000",
+        #                 "vol_closed": "0.00000000",
+        #                 "margin": "14.24900"
+        #             }
+        #
+        marketId = self.safe_string(position, 'pair')
+        rawSide = self.safe_string(position, 'type')
+        side = 'long' if (rawSide == 'buy') else 'short'
+        return self.safe_position({
+            'info': position,
+            'id': None,
+            'symbol': self.safe_symbol(marketId, market),
+            'notional': None,
+            'marginMode': None,
+            'liquidationPrice': None,
+            'entryPrice': None,
+            'unrealizedPnl': self.safe_number(position, 'net'),
+            'realizedPnl': None,
+            'percentage': None,
+            'contracts': self.safe_number(position, 'vol'),
+            'contractSize': None,
+            'markPrice': None,
+            'lastPrice': None,
+            'side': side,
+            'hedged': None,
+            'timestamp': None,
+            'datetime': None,
+            'lastUpdateTimestamp': None,
+            'maintenanceMargin': None,
+            'maintenanceMarginPercentage': None,
+            'collateral': None,
+            'initialMargin': self.safe_number(position, 'margin'),
+            'initialMarginPercentage': None,
+            'leverage': self.safe_number(position, 'leverage'),
+            'marginRatio': None,
+            'stopLossPrice': None,
+            'takeProfitPrice': None,
+        })
 
     def parse_account_type(self, account):
         accountByType = {

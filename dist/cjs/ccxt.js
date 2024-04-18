@@ -108,6 +108,7 @@ var timex = require('./src/timex.js');
 var tokocrypto = require('./src/tokocrypto.js');
 var tradeogre = require('./src/tradeogre.js');
 var upbit = require('./src/upbit.js');
+var valr = require('./src/valr.js');
 var wavesexchange = require('./src/wavesexchange.js');
 var wazirx = require('./src/wazirx.js');
 var whitebit = require('./src/whitebit.js');
@@ -176,6 +177,7 @@ var poloniex$1 = require('./src/pro/poloniex.js');
 var poloniexfutures$1 = require('./src/pro/poloniexfutures.js');
 var probit$1 = require('./src/pro/probit.js');
 var upbit$1 = require('./src/pro/upbit.js');
+var valr$1 = require('./src/pro/valr.js');
 var wazirx$1 = require('./src/pro/wazirx.js');
 var whitebit$1 = require('./src/pro/whitebit.js');
 var woo$1 = require('./src/pro/woo.js');
@@ -281,6 +283,7 @@ const exchanges = {
     'tokocrypto': tokocrypto,
     'tradeogre': tradeogre,
     'upbit': upbit,
+    'valr': valr,
     'wavesexchange': wavesexchange,
     'wazirx': wazirx,
     'whitebit': whitebit,
@@ -351,6 +354,7 @@ const pro = {
     'poloniexfutures': poloniexfutures$1,
     'probit': probit$1,
     'upbit': upbit$1,
+    'valr': valr$1,
     'wazirx': wazirx$1,
     'whitebit': whitebit$1,
     'woo': woo$1,
@@ -497,6 +501,7 @@ exports.timex = timex;
 exports.tokocrypto = tokocrypto;
 exports.tradeogre = tradeogre;
 exports.upbit = upbit;
+exports.valr = valr;
 exports.wavesexchange = wavesexchange;
 exports.wazirx = wazirx;
 exports.whitebit = whitebit;

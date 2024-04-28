@@ -6,6 +6,7 @@ services:
   #     docker-compose run --rm ccxt
   #
   ccxt:
+    platform: "linux/amd64"
     build:
       context: .
     volumes:

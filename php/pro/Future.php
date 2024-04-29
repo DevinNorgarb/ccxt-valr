@@ -15,10 +15,9 @@ class Future implements PromiseInterface {
         $this->deferred = new Deferred();
     }
 
-    public function then(?callable $onFulfilled = null, ?callable $onRejected = null): PromiseInterface {
-        return $this->deferred->promise()->then($onFulfilled, $onRejected);
+    public function then(?callable $onFulfilled = null, ?callable $onRejected = null, ?callable $onProgress = null): PromiseInterface {
+        return $this->deferred->promise()->then($onFulfilled, $onRejected, $onProgress);
     }
-
     public function resolve($value = null) {
         // from the docs
         // Unlike timers, tick callbacks are guaranteed to be executed in the order they are enqueued.

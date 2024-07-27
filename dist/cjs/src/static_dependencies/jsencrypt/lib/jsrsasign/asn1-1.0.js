@@ -5,8 +5,7 @@ Object.defineProperty(exports, '__esModule', { value: true });
 var jsbn = require('../jsbn/jsbn.js');
 var yahoo = require('./yahoo.js');
 
-/* asn1-1.0.13.js (c) 2013-2017 Kenji Urushima | kjur.github.com/jsrsasign/license
- */
+// ----------------------------------------------------------------------------
 /**
  * @fileOverview
  * @name asn1-1.0.js

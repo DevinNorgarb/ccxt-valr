@@ -12,7 +12,7 @@ function _interopDefaultLegacy (e) { return e && typeof e === 'object' && 'defau
 
 var WebSocket__default = /*#__PURE__*/_interopDefaultLegacy(WebSocket);
 
-// ----------------------------------------------------------------------------
+// eslint-disable-next-line no-shadow
 // eslint-disable-next-line no-restricted-globals
 const WebSocketPlatform = platform.isNode ? WebSocket__default["default"] : self.WebSocket;
 class WsClient extends Client {
